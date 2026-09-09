@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+/* Global box sizing */
+* {
+  box-sizing: border-box;
+}
+
+/* Global website typography */
+html {
+  scroll-behavior: smooth;
+}
+
+:root {
+  --bg: #ffffff;
+  --text: #111827;
+  --text-h: #062f2f;
+  --header-bg: #06383a;
+  --accent: #f59e0b;
+  --accent-2: #ff8a1f;
+  --accent-bg: #fffbeb;
+  --accent-border: #d97706;
+  --card-bg: #0f766e;
+  --muted: #6b7280;
+  --border: #e6eef2;
+  --social-bg: #f8fafc;
+  --shadow: 0 8px 24px rgba(2,6,23,0.08);
+}
+
+body {
+  margin: 0;
+  font-family: 'Poppins', sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Make form elements inherit the website font */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
