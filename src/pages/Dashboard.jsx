@@ -12,7 +12,6 @@ import {
   faRightFromBracket,
   faBars,
   faXmark,
-  faBell,
   faChevronDown,
   faUser,
   faArrowRight,
@@ -23,31 +22,162 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { supabase } from "../lib/supabase";
+import { usePendingExchangeRequests } from "../lib/usePendingExchangeRequests";
+import NotificationBell from "../components/NotificationBell";
 
 function Dashboard() {
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [dashboardSearch, setDashboardSearch] = useState("");
+  const [selectedStat, setSelectedStat] = useState(null);
+  const [statRows, setStatRows] = useState([]);
+  const [statDetailsLoading, setStatDetailsLoading] = useState(false);
+  const [statDetailsError, setStatDetailsError] = useState("");
 
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
 
   const [teachCount, setTeachCount] = useState(0);
   const [learnCount, setLearnCount] = useState(0);
+  const [acceptedRequestCount, setAcceptedRequestCount] = useState(0);
+  const [pendingRequestTotal, setPendingRequestTotal] = useState(0);
+  const [recommendations, setRecommendations] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const pendingRequestCount = usePendingExchangeRequests();
 
-  // =========================================================
-  // LOAD USER + PROFILE + SKILLS
-  // =========================================================
+  const statDetails = {
+    teaching: {
+      title: "Skills I Teach",
+      description: "These are the skills you can share with other members.",
+      count: teachCount,
+      action: "Manage My Skills",
+      href: "/skills",
+      icon: faGraduationCap,
+      iconClass: "bg-amber-100 text-amber-600",
+    },
+    learning: {
+      title: "Skills I Want to Learn",
+      description: "Your learning goals help us find the right exchange partners.",
+      count: learnCount,
+      action: "Update Learning Goals",
+      href: "/skills",
+      icon: faBookOpen,
+      iconClass: "bg-teal-100 text-teal-700",
+    },
+    pending: {
+      title: "Pending Requests",
+      description: "Review exchange requests that are waiting for your response.",
+      count: pendingRequestTotal,
+      action: "View Requests",
+      href: "/exchange-requests",
+      icon: faPeopleGroup,
+      iconClass: "bg-amber-50 text-amber-700",
+    },
+    accepted: {
+      title: "Accepted Exchanges",
+      description: "These are your active skill exchange connections.",
+      count: acceptedRequestCount,
+      action: "Open Exchanges",
+      href: "/exchange-requests",
+      icon: faHandshake,
+      iconClass: "bg-orange-50 text-orange-600",
+    },
+  };
+
+  const handleStatClick = async (statKey) => {
+    setSelectedStat(statKey);
+    setStatRows([]);
+    setStatDetailsError("");
+    setStatDetailsLoading(true);
+
+    try {
+      if (!user?.id) {
+        throw new Error("Your account details are not available yet.");
+      }
+
+      if (statKey === "teaching" || statKey === "learning") {
+        const { data, error: skillsError } = await supabase
+          .from("skills")
+          .select("id, skill_name, description, skill_type")
+          .eq("user_id", user.id)
+          .eq("skill_type", statKey === "teaching" ? "teach" : "learn")
+          .order("created_at", { ascending: true });
+
+        if (skillsError) throw skillsError;
+
+        setStatRows(
+          (data || []).map((skill) => ({
+            id: skill.id,
+            title: skill.skill_name,
+            subtitle: skill.description || "No description added yet.",
+            badge: statKey === "teaching" ? "Teaching" : "Learning",
+          }))
+        );
+        return;
+      }
+
+      const requestQuery = supabase
+        .from("exchange_requests")
+        .select("id, sender_id, receiver_id, skill_id, status, created_at")
+        .eq("status", statKey === "pending" ? "pending" : "accepted");
+
+      const { data: requests, error: requestsError } = statKey === "pending"
+        ? await requestQuery.eq("receiver_id", user.id).order("created_at", { ascending: false })
+        : await requestQuery
+            .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+            .order("created_at", { ascending: false });
+
+      if (requestsError) throw requestsError;
+
+      const requestRows = requests || [];
+      const profileIds = [...new Set(requestRows.flatMap((request) => [request.sender_id, request.receiver_id]))];
+      const skillIds = [...new Set(requestRows.map((request) => request.skill_id).filter(Boolean))];
+
+      const [{ data: profiles, error: profilesError }, { data: skills, error: skillsError }] = await Promise.all([
+        profileIds.length
+          ? supabase.from("profiles").select("id, full_name, username, occupation").in("id", profileIds)
+          : Promise.resolve({ data: [], error: null }),
+        skillIds.length
+          ? supabase.from("skills").select("id, skill_name").in("id", skillIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      if (profilesError) throw profilesError;
+      if (skillsError) throw skillsError;
+
+      const profilesById = Object.fromEntries((profiles || []).map((item) => [item.id, item]));
+      const skillsById = Object.fromEntries((skills || []).map((item) => [item.id, item]));
+
+      setStatRows(
+        requestRows.map((request) => {
+          const otherUserId = request.sender_id === user.id ? request.receiver_id : request.sender_id;
+          const person = profilesById[otherUserId];
+
+          return {
+            id: request.id,
+            title: person?.full_name || person?.username || "Skill member",
+            subtitle: `${skillsById[request.skill_id]?.skill_name || "Skill exchange"}${person?.occupation ? ` · ${person.occupation}` : ""}`,
+            badge: request.status,
+            date: new Date(request.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Dashboard statistic details error:", error);
+      setStatDetailsError(error.message || "Unable to load these details.");
+    } finally {
+      setStatDetailsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const loadDashboard = async () => {
       try {
         setLoading(true);
 
-        // Get currently logged-in user
         const {
           data: { user: currentUser },
           error: userError,
@@ -95,6 +225,43 @@ function Dashboard() {
 
         setProfile(profileData);
 
+        const [
+          { data: recommendedProfiles, error: recommendationsError },
+          { data: recommendedSkills, error: recommendedSkillsError },
+        ] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name, username, occupation, avatar_url, city, country")
+            .neq("id", currentUser.id)
+            .eq("profile_completed", true)
+            .limit(3),
+          supabase
+            .from("skills")
+            .select("user_id, skill_name, skill_type")
+            .neq("user_id", currentUser.id),
+        ]);
+
+        if (recommendationsError) throw recommendationsError;
+        if (recommendedSkillsError) throw recommendedSkillsError;
+
+        const skillsByUser = (recommendedSkills || []).reduce((groups, skill) => {
+          groups[skill.user_id] = groups[skill.user_id] || [];
+          groups[skill.user_id].push(skill);
+          return groups;
+        }, {});
+
+        setRecommendations(
+          (recommendedProfiles || []).map((person) => ({
+            ...person,
+            teaches: (skillsByUser[person.id] || [])
+              .filter((skill) => skill.skill_type === "teach")
+              .slice(0, 1),
+            learns: (skillsByUser[person.id] || [])
+              .filter((skill) => skill.skill_type === "learn")
+              .slice(0, 1),
+          }))
+        );
+
         // -----------------------------------------------------
         // Get teaching and learning skill counts
         // -----------------------------------------------------
@@ -102,6 +269,8 @@ function Dashboard() {
         const [
           { count: teachingCount, error: teachingError },
           { count: learningCount, error: learningError },
+          { count: acceptedCount, error: acceptedError },
+          { count: pendingCount, error: pendingError },
         ] = await Promise.all([
           supabase
             .from("skills")
@@ -120,6 +289,20 @@ function Dashboard() {
             })
             .eq("user_id", currentUser.id)
             .eq("skill_type", "learn"),
+
+          supabase
+            .from("exchange_requests")
+            .select("id", { count: "exact", head: true })
+            .or(
+              `sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`
+            )
+            .eq("status", "accepted"),
+
+          supabase
+            .from("exchange_requests")
+            .select("id", { count: "exact", head: true })
+            .eq("receiver_id", currentUser.id)
+            .eq("status", "pending"),
         ]);
 
         if (teachingError) {
@@ -136,8 +319,18 @@ function Dashboard() {
           );
         }
 
+        if (acceptedError) {
+          console.error("Accepted requests error:", acceptedError);
+        }
+
+        if (pendingError) {
+          console.error("Pending requests error:", pendingError);
+        }
+
         setTeachCount(teachingCount || 0);
         setLearnCount(learningCount || 0);
+        setAcceptedRequestCount(acceptedCount || 0);
+        setPendingRequestTotal(pendingCount || 0);
       } catch (error) {
         console.error(
           "Dashboard loading error:",
@@ -211,7 +404,7 @@ function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fffdf2] text-gray-900">
+    <div className="app-shell min-h-screen bg-[#fffdf2] text-gray-900">
 
       {/* =====================================================
           MOBILE OVERLAY
@@ -230,8 +423,8 @@ function Dashboard() {
 
       <aside
         className={`
-          fixed top-0 left-0 z-50 h-screen w-64
-          bg-[#062f2f] border-r border-white/10
+          fixed top-0 left-0 z-50 h-screen w-[260px]
+          bg-[#062f2f] text-white
           flex flex-col
           transform transition-transform duration-300
           lg:translate-x-0
@@ -245,7 +438,7 @@ function Dashboard() {
 
         {/* Logo */}
 
-        <div className="h-20 flex items-center justify-between px-6 border-b border-white/10">
+        <div className="px-6 py-7 flex items-center justify-between">
 
           <Link
             to="/dashboard"
@@ -265,7 +458,8 @@ function Dashboard() {
 
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden text-gray-400 hover:text-white cursor-pointer"
+            className="lg:hidden w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center"
+            aria-label="Close menu"
           >
             <FontAwesomeIcon icon={faXmark} />
           </button>
@@ -274,11 +468,7 @@ function Dashboard() {
 
         {/* Navigation */}
 
-        <nav className="flex-1 px-4 py-6">
-
-          <p className="px-3 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            Menu
-          </p>
+        <nav className="px-4 space-y-2 flex-1">
 
           <div className="space-y-1">
 
@@ -287,7 +477,7 @@ function Dashboard() {
             <Link
               to="/dashboard"
               onClick={() => setSidebarOpen(false)}
-              className="flex items-center gap-3 px-3 py-3 rounded-lg bg-amber-500 text-white font-medium cursor-pointer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500 text-[#062f2f] font-semibold transition cursor-pointer"
             >
               <FontAwesomeIcon
                 icon={faHouse}
@@ -352,20 +542,33 @@ function Dashboard() {
 
             </Link>
 
+            <Link
+              to="/exchange-requests"
+              onClick={() => setSidebarOpen(false)}
+              className="flex items-center justify-between px-3 py-3 rounded-lg text-gray-200 hover:bg-white/10 hover:text-white transition cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <FontAwesomeIcon icon={faHandshake} className="w-5" />
+                Exchange Requests
+              </div>
+
+              {pendingRequestCount > 0 && (
+                <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                  {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
+                </span>
+              )}
+            </Link>
+
+
+
           </div>
 
-          {/* More */}
-
-          <div className="mt-10">
-
-            <p className="px-3 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">
-              More
-            </p>
+          <div className="space-y-2">
 
             <Link
               to="/settings"
               onClick={() => setSidebarOpen(false)}
-              className="flex items-center gap-3 px-3 py-3 rounded-lg text-gray-200 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-white/75 hover:bg-white/10 hover:text-white transition cursor-pointer"
             >
               <FontAwesomeIcon
                 icon={faGear}
@@ -403,54 +606,46 @@ function Dashboard() {
           MAIN AREA
       ====================================================== */}
 
-      <div className="lg:ml-64">
+      <div className="lg:ml-[260px]">
 
         {/* ===================================================
             TOPBAR
         ==================================================== */}
 
-        <header className="h-20 bg-white border-b border-[#d9e7df] flex items-center justify-between px-5 sm:px-8">
+        <header className="min-h-20 bg-white border-b border-[#d9e7df] flex items-center justify-between gap-3 px-4 py-3 sm:px-8">
 
           {/* Mobile menu */}
 
           <button
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer"
+            aria-label="Open dashboard navigation"
+            className="lg:hidden w-11 h-11 shrink-0 flex items-center justify-center rounded-lg hover:bg-gray-100 cursor-pointer"
           >
             <FontAwesomeIcon icon={faBars} />
           </button>
 
-          {/* Desktop title */}
-
-          <div className="hidden lg:block">
-
-            <p className="text-sm text-gray-500">
-              Skill Exchanger
-            </p>
-
-            <h1 className="text-lg font-semibold">
-              Dashboard
-            </h1>
-
+          <div className="hidden sm:flex items-center gap-3 flex-1 max-w-md ml-3 lg:ml-0">
+            <div className="relative w-full">
+              <FontAwesomeIcon
+                icon={faCompass}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"
+              />
+              <input
+                type="search"
+                value={dashboardSearch}
+                onChange={(event) => setDashboardSearch(event.target.value)}
+                placeholder="Search skills, people or topics..."
+                aria-label="Search skills, people or topics"
+                className="w-full rounded-xl border border-[#dce8e1] bg-[#fbfdfb] py-2.5 pl-9 pr-4 text-xs text-[#163b3b] outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10"
+              />
+            </div>
           </div>
 
           {/* Right side */}
 
-          <div className="flex items-center gap-4 ml-auto">
+          <div className="flex items-center gap-2 sm:gap-4 ml-auto">
 
-            {/* Notifications */}
-
-            <button
-              className="relative w-10 h-10 rounded-full hover:bg-gray-100 flex items-center justify-center cursor-pointer"
-              title="Notifications"
-            >
-              <FontAwesomeIcon
-                icon={faBell}
-                className="text-gray-600"
-              />
-
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-            </button>
+            <NotificationBell />
 
             {/* Profile */}
 
@@ -462,7 +657,8 @@ function Dashboard() {
                     (previous) => !previous
                   )
                 }
-                className="flex items-center gap-3 cursor-pointer"
+                aria-label="Open profile menu"
+                className="flex items-center gap-2 sm:gap-3 cursor-pointer"
               >
 
                 {/* Avatar */}
@@ -541,88 +737,56 @@ function Dashboard() {
             CONTENT
         ==================================================== */}
 
-        <main className="p-5 sm:p-8 max-w-7xl mx-auto">
+        <main className="dashboard-content p-4 sm:p-8 max-w-7xl mx-auto">
 
-          {/* Welcome */}
-
-          <section className="mb-8">
-
-            <h2 className="text-2xl sm:text-3xl font-bold">
-
-              Welcome back,{" "}
-              {displayName.split(" ")[0]}
-
-            </h2>
-
-            <p className="mt-2 text-gray-500">
-              Discover people, exchange skills, and
-              grow together.
+          <section className="dashboard-intro mb-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#0f766e]">
+              Your learning space
             </p>
-
+            <h2 className="mt-1 text-2xl sm:text-3xl font-bold">
+              Good morning, {displayName.split(" ")[0]}! <span aria-hidden="true">👋</span>
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Keep learning, keep growing.
+            </p>
           </section>
 
-          {/* =================================================
-              QUICK ACTION
-          ================================================== */}
-
-          <section className="mb-8">
-
-            <div className="bg-[#0f766e] rounded-lg p-6 sm:p-8 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-
-              <div>
-
-                <div className="flex items-center gap-3 mb-3">
-
-                  <div className="w-10 h-10 rounded-lg bg-white/15 flex items-center justify-center">
-
-                    <FontAwesomeIcon
-                      icon={faHandshake}
-                    />
-
-                  </div>
-
-                  <span className="font-medium">
-                    Start exchanging
-                  </span>
-
+          <section className="dashboard-profile-row grid grid-cols-1 lg:grid-cols-[1.05fr_.95fr] gap-4 mb-5">
+            <div className="dashboard-profile-card bg-[#eaf7f2] border border-[#d4ebe1] rounded-2xl p-5 flex items-center gap-4">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt={displayName} className="w-16 h-16 rounded-full object-cover border-4 border-white shadow-sm" />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-[#0f766e] text-white flex items-center justify-center text-xl font-bold border-4 border-white shadow-sm">
+                  {initials}
                 </div>
-
-                <h3 className="text-xl sm:text-2xl font-bold">
-                  Find someone who can teach you.
-                </h3>
-
-                <p className="mt-2 text-blue-100 max-w-xl">
-                  Add your skills and discover people
-                  interested in exchanging knowledge
-                  with you.
-                </p>
-
+              )}
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-[#073f3f] truncate">{displayName}</h3>
+                <p className="text-xs text-[#52716b] mt-1 truncate">{occupation}</p>
+                <p className="text-xs text-[#52716b] mt-0.5">{profile?.city || "Add your location"}{profile?.country ? `, ${profile.country}` : ""}</p>
+                <Link to="/settings" className="inline-flex mt-3 rounded-lg bg-[#087878] px-4 py-2 text-xs font-semibold text-white hover:bg-[#065e5e]">View Profile</Link>
               </div>
-
-              <Link
-                to="/discover"
-                className="inline-flex items-center justify-center gap-2 bg-amber-500 text-white px-5 py-3 rounded-lg font-semibold hover:bg-amber-600 transition cursor-pointer whitespace-nowrap"
-              >
-                Discover Skills
-
-                <FontAwesomeIcon
-                  icon={faArrowRight}
-                />
-              </Link>
-
             </div>
 
+            <div className="dashboard-journey-card rounded-2xl p-5 text-white flex items-center justify-between gap-4 overflow-hidden">
+              <div className="relative z-10">
+                <p className="text-xs font-semibold text-amber-200">Your Learning Journey</p>
+                <h3 className="mt-2 text-lg font-bold leading-tight">Make skills, meet opportunities.</h3>
+                <Link to="/discover" className="inline-flex items-center gap-2 mt-4 text-xs font-semibold text-white hover:text-amber-200">Explore people <FontAwesomeIcon icon={faArrowRight} /></Link>
+              </div>
+              <div className="dashboard-journey-mark" aria-hidden="true"><FontAwesomeIcon icon={faGraduationCap} /></div>
+            </div>
           </section>
 
           {/* =================================================
               STATISTICS
           ================================================== */}
 
-          <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-10">
+          <section className="dashboard-stats grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-10">
 
             {/* Teaching */}
 
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <button type="button" onClick={() => handleStatClick("teaching")} className="stat-card bg-white border border-[#d9e7df] rounded-2xl p-5 shadow-sm hover:shadow-[var(--shadow-hover)] transition text-left cursor-pointer">
 
               <div className="flex items-center justify-between">
 
@@ -648,18 +812,18 @@ function Dashboard() {
 
               </div>
 
-            </div>
+            </button>
 
             {/* Learning */}
 
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <button type="button" onClick={() => handleStatClick("learning")} className="stat-card bg-white border border-[#d9e7df] rounded-2xl p-5 shadow-sm hover:shadow-[var(--shadow-hover)] transition text-left cursor-pointer">
 
               <div className="flex items-center justify-between">
 
                 <div>
 
                   <p className="text-sm text-gray-500">
-                    Skills I Want
+                    Skills I Want to Learn
                   </p>
 
                   <h3 className="text-3xl font-bold mt-2">
@@ -678,22 +842,22 @@ function Dashboard() {
 
               </div>
 
-            </div>
+            </button>
 
             {/* Matches */}
 
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <button type="button" onClick={() => handleStatClick("pending")} className="stat-card bg-white border border-[#d9e7df] rounded-2xl p-5 shadow-sm hover:shadow-[var(--shadow-hover)] transition text-left cursor-pointer">
 
               <div className="flex items-center justify-between">
 
                 <div>
 
                   <p className="text-sm text-gray-500">
-                    Matches
+                    Pending Requests
                   </p>
 
                   <h3 className="text-3xl font-bold mt-2">
-                    0
+                    {pendingRequestTotal}
                   </h3>
 
                 </div>
@@ -708,22 +872,22 @@ function Dashboard() {
 
               </div>
 
-            </div>
+            </button>
 
             {/* Connections */}
 
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <button type="button" onClick={() => handleStatClick("accepted")} className="stat-card bg-white border border-[#d9e7df] rounded-2xl p-5 shadow-sm hover:shadow-[var(--shadow-hover)] transition text-left cursor-pointer">
 
               <div className="flex items-center justify-between">
 
                 <div>
 
                   <p className="text-sm text-gray-500">
-                    Connections
+                    Accepted Exchanges
                   </p>
 
                   <h3 className="text-3xl font-bold mt-2">
-                    0
+                    {acceptedRequestCount}
                   </h3>
 
                 </div>
@@ -738,7 +902,7 @@ function Dashboard() {
 
               </div>
 
-            </div>
+            </button>
 
           </section>
 
@@ -748,11 +912,11 @@ function Dashboard() {
 
           <section>
 
-            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-start justify-between gap-4 mb-5">
 
               <div>
 
-                <h2 className="text-xl font-bold">
+                <h2 className="text-lg sm:text-xl font-bold">
                   Recommended for You
                 </h2>
 
@@ -776,40 +940,43 @@ function Dashboard() {
 
             </div>
 
-            {/* Empty state */}
-
-            <div className="bg-white border border-[#d9e7df] rounded-lg p-10 text-center">
-
-              <div className="mx-auto w-14 h-14 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mb-4">
-
-                <FontAwesomeIcon
-                  icon={faPeopleGroup}
-                  className="text-xl"
-                />
-
-              </div>
-
-              <h3 className="font-semibold text-lg">
-                Your recommendations are coming
-              </h3>
-
-              <p className="text-gray-500 text-sm mt-2 max-w-md mx-auto">
-                Add the skills you can teach and the
-                skills you want to learn. We'll use them
-                to find the best people for you.
-              </p>
-
-              <Link
-                to="/skills"
-                className="inline-flex items-center gap-2 mt-5 px-5 py-3 bg-[#062f2f] text-white rounded-lg font-medium hover:bg-[#0f766e] transition cursor-pointer"
-              >
-                Add Your Skills
-
-                <FontAwesomeIcon
-                  icon={faArrowRight}
-                />
-              </Link>
-
+            <div className="dashboard-recommendations grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {recommendations.length > 0 ? recommendations.map((person) => (
+                <article key={person.id} className="recommendation-card bg-white border border-[#d9e7df] rounded-2xl p-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {person.avatar_url ? (
+                      <img src={person.avatar_url} alt={person.full_name || person.username || "Member"} className="h-10 w-10 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ccfbf1] text-xs font-bold text-[#0f766e]">
+                        {(person.full_name || person.username || "U").slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-bold text-[#073f3f]">{person.full_name || person.username || "Skill member"}</h3>
+                      <p className="truncate text-[10px] text-gray-500">{person.occupation || "Skill member"}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {[...person.teaches, ...person.learns].map((skill) => (
+                      <span key={`${person.id}-${skill.skill_name}`} className="rounded-full bg-[#eaf7f2] px-2 py-1 text-[10px] font-semibold text-[#0f766e]">
+                        {skill.skill_name}
+                      </span>
+                    ))}
+                  </div>
+                  <Link to="/discover" className="mt-3 inline-flex items-center gap-1 rounded-lg bg-[#087878] px-3 py-2 text-[10px] font-bold text-white">Request Exchange <FontAwesomeIcon icon={faArrowRight} /></Link>
+                </article>
+              )) : (
+                ["Discover a new skill", "Share what you know", "Complete your profile"].map((title, index) => (
+                  <div key={title} className="recommendation-card bg-white border border-[#d9e7df] rounded-2xl p-4">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${index === 1 ? "bg-amber-100 text-amber-600" : "bg-[#eaf7f2] text-[#0f766e]"}`}>
+                      <FontAwesomeIcon icon={index === 0 ? faCompass : index === 1 ? faHandshake : faUser} />
+                    </div>
+                    <h3 className="mt-3 text-sm font-bold text-[#073f3f]">{title}</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-500">Add skills to get better matches.</p>
+                    <Link to={index === 2 ? "/skills" : "/discover"} className="inline-flex items-center gap-1 mt-3 text-xs font-bold text-[#0f766e]">Open <FontAwesomeIcon icon={faArrowRight} /></Link>
+                  </div>
+                ))
+              )}
             </div>
 
           </section>
@@ -817,6 +984,107 @@ function Dashboard() {
         </main>
 
       </div>
+
+      {selectedStat && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#062f2f]/45 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dashboard-stat-title"
+          onClick={() => setSelectedStat(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {(() => {
+              const detail = statDetails[selectedStat];
+
+              return (
+                <>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${detail.iconClass}`}>
+                        <FontAwesomeIcon icon={detail.icon} />
+                      </span>
+                      <div>
+                        <h2 id="dashboard-stat-title" className="text-lg font-bold text-[#073f3f]">
+                          {detail.title}
+                        </h2>
+                        <p className="text-xs text-gray-500">Dashboard summary</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStat(null)}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                      aria-label="Close statistic details"
+                    >
+                      <FontAwesomeIcon icon={faXmark} />
+                    </button>
+                  </div>
+
+                  <div className="mt-6 rounded-xl bg-[#f7f4eb] p-4">
+                    <p className="text-4xl font-bold text-[#073f3f]">{detail.count}</p>
+                    <p className="mt-2 text-sm leading-relaxed text-gray-600">{detail.description}</p>
+                  </div>
+
+                  <div className="mt-4 max-h-52 overflow-y-auto">
+                    {statDetailsLoading ? (
+                      <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+                        <FontAwesomeIcon icon={faSpinner} spin className="text-[#0f766e]" />
+                        Loading details...
+                      </div>
+                    ) : statDetailsError ? (
+                      <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {statDetailsError}
+                      </p>
+                    ) : statRows.length > 0 ? (
+                      <div className="divide-y divide-[#edf2ee] rounded-xl border border-[#e5ece7]">
+                        {statRows.map((row) => (
+                          <div key={row.id} className="flex items-center justify-between gap-3 px-3 py-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#073f3f]">{row.title}</p>
+                              <p className="truncate text-xs text-gray-500">{row.subtitle}</p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <span className="rounded-full bg-[#eaf7f2] px-2 py-1 text-[10px] font-semibold capitalize text-[#0f766e]">
+                                {row.badge}
+                              </span>
+                              {row.date && <p className="mt-1 text-[10px] text-gray-400">{row.date}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="rounded-xl border border-dashed border-[#dce8e1] px-4 py-5 text-center text-sm text-gray-500">
+                        No records found yet.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-5 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStat(null)}
+                      className="rounded-lg border border-[#dce8e1] px-4 py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                    >
+                      Close
+                    </button>
+                    <Link
+                      to={detail.href}
+                      onClick={() => setSelectedStat(null)}
+                      className="rounded-lg bg-[#087878] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#065e5e]"
+                    >
+                      {detail.action}
+                    </Link>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
     </div>
   );

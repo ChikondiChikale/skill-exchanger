@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 const skills = [
   {
     name: "Web Development",
@@ -33,8 +35,8 @@ const skills = [
 
 function Discover() {
   return (
-    <section id="discover" className="bg-[#fffdf2] py-20 md:py-24">
-      <div className="max-w-7xl mx-auto px-6">
+    <section id="discover" className="bg-[#fffdf2] py-16 sm:py-20 md:py-24">
+      <div className="max-w-7xl mx-auto px-5 sm:px-6">
 
         {/* Section Header */}
         <div className="max-w-3xl mx-auto text-center">
@@ -43,11 +45,11 @@ function Discover() {
             Discover
           </span>
 
-          <h2 className="mt-5 text-4xl md:text-5xl font-bold text-[#062f2f]">
+          <h2 className="mt-5 text-3xl sm:text-4xl md:text-5xl font-bold leading-tight text-[#062f2f]">
             Discover skills worth sharing
           </h2>
 
-          <p className="mt-5 text-lg text-gray-600 leading-relaxed">
+          <p className="mt-5 text-base sm:text-lg text-gray-600 leading-relaxed">
             Find skills you want to learn and people who are ready to
             exchange knowledge with you.
           </p>
@@ -55,9 +57,9 @@ function Discover() {
         </div>
 
         {/* Search */}
-        <div className="max-w-2xl mx-auto mt-10">
+        <div className="max-w-2xl mx-auto mt-8 sm:mt-10">
 
-          <div className="flex items-center bg-white border border-[#d9e7df] rounded-lg px-5 py-3 focus-within:ring-2 focus-within:ring-amber-500">
+          <div className="flex items-center bg-white border border-[#d9e7df] rounded-lg px-4 sm:px-5 py-3 focus-within:ring-2 focus-within:ring-amber-500">
 
             <span className="text-gray-400 text-xl mr-3">
               🔍
@@ -74,11 +76,13 @@ function Discover() {
         </div>
 
         {/* Skill Cards */}
-        <div className="mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="mt-10 sm:mt-14 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
 
           {skills.map((skill) => (
-            <div
+            <Link
               key={skill.name}
+              to="/login"
+              state={{ from: "/discover" }}
               className="group p-6 bg-white border border-[#d9e7df] rounded-lg hover:border-amber-300 hover:shadow-lg transition duration-300 cursor-pointer"
             >
 
@@ -104,7 +108,7 @@ function Discover() {
                 {skill.learners} people interested
               </p>
 
-            </div>
+            </Link>
           ))}
 
         </div>
@@ -112,9 +116,13 @@ function Discover() {
         {/* View More */}
         <div className="text-center mt-10">
 
-          <button className="px-6 py-3 border border-[#9ac5b8] rounded-lg text-[#062f2f] font-medium hover:border-amber-500 hover:text-amber-600 transition">
+          <Link
+            to="/login"
+            state={{ from: "/discover" }}
+            className="inline-block px-6 py-3 border border-[#9ac5b8] rounded-lg text-[#062f2f] font-medium hover:border-amber-500 hover:text-amber-600 transition"
+          >
             Explore All Skills
-          </button>
+          </Link>
 
         </div>
 

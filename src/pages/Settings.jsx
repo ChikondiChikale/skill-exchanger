@@ -7,6 +7,7 @@ import {
   faCompass,
   faGraduationCap,
   faComments,
+  faHandshake,
   faGear,
   faRightFromBracket,
   faUser,
@@ -23,15 +24,21 @@ import {
   faCircleExclamation,
   faBars,
   faXmark,
+  faChevronDown,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { supabase } from "../lib/supabase";
+import { usePendingExchangeRequests } from "../lib/usePendingExchangeRequests";
+import NotificationBell from "../components/NotificationBell";
 
 function Settings() {
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const pendingRequestCount = usePendingExchangeRequests();
   const [activeSection, setActiveSection] = useState("profile");
+  const settingsPanelRef = useRef(null);
 
   // =========================================================
   // USER + PROFILE
@@ -59,6 +66,13 @@ function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [securityMessage, setSecurityMessage] = useState("");
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [updatingPassword, setUpdatingPassword] = useState(false);
 
   // =========================================================
   // PROFILE PHOTO
@@ -149,6 +163,18 @@ function Settings() {
 
     loadProfile();
   }, [navigate]);
+
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecoverySession(true);
+        setActiveSection("security");
+        setChangePasswordOpen(true);
+      }
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, []);
 
   // =========================================================
   // SAVE PROFILE
@@ -249,6 +275,62 @@ function Settings() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const updatePassword = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSecurityMessage("");
+
+    if (newPassword.length < 8) {
+      setError("Your new password must be at least 8 characters long.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError("The passwords do not match.");
+      return;
+    }
+
+    try {
+      setUpdatingPassword(true);
+
+      if (!isRecoverySession) {
+        if (!currentPassword.trim()) {
+          setError("Enter your current password to continue.");
+          return;
+        }
+
+        if (!user?.email) {
+          setError("Your account email could not be found.");
+          return;
+        }
+
+        const { error: verificationError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: currentPassword,
+        });
+
+        if (verificationError) {
+          setError("Your current password is incorrect.");
+          return;
+        }
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+
+      if (updateError) throw updateError;
+
+      setNewPassword("");
+      setConfirmPassword("");
+      setCurrentPassword("");
+      setChangePasswordOpen(false);
+      setSecurityMessage("Your password has been updated successfully.");
+    } catch (updateError) {
+      setError(updateError.message || "Unable to update your password.");
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
@@ -460,6 +542,19 @@ function Settings() {
     },
   ];
 
+  const selectSection = (sectionId) => {
+    setActiveSection(sectionId);
+
+    if (window.innerWidth < 1024) {
+      window.setTimeout(() => {
+        settingsPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 0);
+    }
+  };
+
   // =========================================================
   // LOADING SCREEN
   // =========================================================
@@ -490,7 +585,7 @@ function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fffdf2] text-[#062f2f]">
+    <div className="app-shell min-h-screen bg-[#fffdf2] text-[#062f2f]">
 
       {sidebarOpen && (
         <div
@@ -503,7 +598,7 @@ function Settings() {
           SIDEBAR
       ====================================================== */}
 
-      <aside className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] text-white flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
         {/* Logo */}
 
@@ -542,11 +637,7 @@ function Settings() {
 
         {/* Navigation */}
 
-        <nav className="flex-1 px-4 py-7">
-
-          <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-            Menu
-          </p>
+        <nav className="px-4 space-y-2 flex-1">
 
           <div className="space-y-1.5">
 
@@ -604,19 +695,31 @@ function Settings() {
 
             </Link>
 
+            <Link
+              to="/exchange-requests"
+              className="group flex items-center justify-between px-3.5 py-3 rounded-xl text-white/65 hover:bg-white/10 hover:text-white transition cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg flex items-center justify-center group-hover:bg-white/10">
+                  <FontAwesomeIcon icon={faHandshake} />
+                </span>
+                <span>Exchange Requests</span>
+              </div>
+
+              {pendingRequestCount > 0 && (
+                <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#f59e0b] text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
+                </span>
+              )}
+            </Link>
+
           </div>
 
-          {/* More */}
-
-          <div className="mt-10">
-
-            <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-              More
-            </p>
+          <div className="space-y-2">
 
             <Link
               to="/settings"
-              className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[#f59e0b] text-white font-semibold shadow-lg cursor-pointer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f59e0b] text-[#062f2f] font-semibold transition cursor-pointer"
             >
 
               <span className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
@@ -660,13 +763,13 @@ function Settings() {
 
         {/* HEADER */}
 
-        <header className="h-[78px] bg-white border-b border-[#d9e7df] px-5 sm:px-8 flex items-center justify-between">
+        <header className="min-h-[78px] bg-white border-b border-[#d9e7df] px-4 py-3 sm:px-8 flex items-center justify-between gap-3">
 
           <div className="flex items-center gap-3">
 
             <button
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100"
+              className="lg:hidden w-11 h-11 shrink-0 flex items-center justify-center rounded-lg hover:bg-gray-100"
               aria-label="Open navigation menu"
             >
               <FontAwesomeIcon icon={faBars} />
@@ -686,30 +789,63 @@ function Settings() {
 
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 ml-auto">
 
-            {profile?.avatar_url ? (
-              <img
-                src={profile.avatar_url}
-                alt={displayName}
-                className="w-10 h-10 rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold">
-                {initials}
-              </div>
-            )}
+            <NotificationBell />
 
-            <div className="hidden sm:block">
+            <div className="relative">
+              <button
+                onClick={() => setProfileMenuOpen((previous) => !previous)}
+                aria-label="Open profile menu"
+                className="flex items-center gap-2 sm:gap-3 cursor-pointer"
+              >
+                {profile?.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={displayName}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold">
+                    {initials}
+                  </div>
+                )}
 
-              <p className="text-sm font-bold">
-                {displayName}
-              </p>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-semibold text-[#062f2f]">
+                    {displayName}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {occupation || "Member"}
+                  </p>
+                </div>
 
-              <p className="text-[11px] text-gray-400">
-                {occupation || "Member"}
-              </p>
+                <FontAwesomeIcon icon={faChevronDown} className="text-xs text-gray-400" />
+              </button>
 
+              {profileMenuOpen && (
+                <div className="absolute right-0 top-14 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-2 z-30">
+                  <Link
+                    to="/settings"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faUser} />
+                    Profile & Settings
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faRightFromBracket} />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>
@@ -718,13 +854,13 @@ function Settings() {
 
         {/* CONTENT */}
 
-        <main className="max-w-[1200px] mx-auto px-5 sm:px-8 py-8">
+        <main className="settings-content max-w-[1200px] mx-auto px-4 sm:px-8 py-6 sm:py-8">
 
           {/* INTRO */}
 
-          <section className="mb-8">
+          <section className="settings-intro mb-8">
 
-            <h2 className="text-3xl font-extrabold tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Settings
             </h2>
 
@@ -751,22 +887,20 @@ function Settings() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 sm:gap-6">
 
             {/* =================================================
                 SETTINGS MENU
             ================================================== */}
 
-            <aside className="bg-white border border-[#d9e7df] rounded-[24px] p-3 h-fit">
+            <aside className="grid grid-cols-2 lg:sticky lg:top-6 lg:block bg-white border border-[#d9e7df] rounded-2xl sm:rounded-[24px] p-2 sm:p-3 h-fit">
 
               {sections.map((section) => (
 
                 <button
                   key={section.id}
-                  onClick={() =>
-                    setActiveSection(section.id)
-                  }
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition cursor-pointer mb-1 ${
+                  onClick={() => selectSection(section.id)}
+                  className={`w-full flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-xl text-left transition cursor-pointer mb-1 ${
                     activeSection === section.id
                       ? "bg-[#f0fdfa] text-[#0f766e]"
                       : "hover:bg-[#f8faf8] text-gray-600"
@@ -774,7 +908,7 @@ function Settings() {
                 >
 
                   <span
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 ${
                       activeSection === section.id
                         ? "bg-[#0f766e] text-white"
                         : "bg-gray-100 text-gray-500"
@@ -789,7 +923,7 @@ function Settings() {
                       {section.label}
                     </span>
 
-                    <span className="block text-[10px] text-gray-400 mt-0.5 truncate">
+                    <span className="hidden sm:block text-[10px] text-gray-400 mt-0.5 truncate">
                       {section.description}
                     </span>
 
@@ -797,7 +931,7 @@ function Settings() {
 
                   <FontAwesomeIcon
                     icon={faChevronRight}
-                    className="text-[10px] opacity-40"
+                    className="hidden sm:block text-[10px] opacity-40"
                   />
 
                 </button>
@@ -810,7 +944,10 @@ function Settings() {
                 SETTINGS PANEL
             ================================================== */}
 
-            <section className="bg-white border border-[#d9e7df] rounded-[24px] overflow-hidden">
+            <section
+              ref={settingsPanelRef}
+              className="scroll-mt-6 bg-white border border-[#d9e7df] rounded-2xl sm:rounded-[24px] overflow-hidden"
+            >
 
               {/* =================================================
                   PROFILE
@@ -819,7 +956,7 @@ function Settings() {
               {activeSection === "profile" && (
                 <div>
 
-                  <div className="p-6 sm:p-8 border-b border-[#e5ece7]">
+                  <div className="p-5 sm:p-8 border-b border-[#e5ece7]">
 
                     <h3 className="text-xl font-extrabold">
                       Profile
@@ -831,11 +968,11 @@ function Settings() {
 
                   </div>
 
-                  <div className="p-6 sm:p-8">
+                  <div className="p-5 sm:p-8">
 
                     {/* Avatar */}
 
-                    <div className="flex items-center gap-5 mb-8">
+                    <div className="flex items-start sm:items-center gap-4 sm:gap-5 mb-7 sm:mb-8">
 
                       <div className="relative">
 
@@ -883,7 +1020,7 @@ function Settings() {
 
                       </div>
 
-                      <div>
+                      <div className="min-w-0">
 
                         <h4 className="font-extrabold">
                           Profile photo
@@ -1035,7 +1172,7 @@ function Settings() {
 
                     {/* Save */}
 
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-4">
 
                       {saved ? (
                         <div className="flex items-center gap-2 text-sm font-bold text-[#0f766e]">
@@ -1054,7 +1191,7 @@ function Settings() {
                       <button
                         onClick={saveProfile}
                         disabled={saving}
-                        className={`px-6 py-3 rounded-xl text-white text-sm font-bold transition flex items-center gap-2 ${
+                        className={`w-full sm:w-auto justify-center px-6 py-3 rounded-xl text-white text-sm font-bold transition flex items-center gap-2 ${
                           saving
                             ? "bg-amber-300 cursor-not-allowed"
                             : "bg-[#f59e0b] hover:bg-[#d97706] cursor-pointer"
@@ -1102,6 +1239,12 @@ function Settings() {
                   </div>
 
                   <div className="p-6 sm:p-8">
+
+                    {securityMessage && (
+                      <div className="mb-5 rounded-xl border border-[#99f6e4] bg-[#f0fdfa] px-4 py-3 text-sm font-medium text-[#0f766e]">
+                        {securityMessage}
+                      </div>
+                    )}
 
                     <div className="p-5 rounded-2xl bg-[#f8faf8] border border-[#e5ece7] flex items-center gap-4">
 
@@ -1221,6 +1364,7 @@ function Settings() {
 
                     <button
                       type="button"
+                      onClick={() => setChangePasswordOpen(true)}
                       className="mt-5 w-full p-4 border border-[#d9e7df] rounded-2xl flex items-center gap-3 text-left hover:bg-[#fafcfb] cursor-pointer transition"
                     >
 
@@ -1246,6 +1390,56 @@ function Settings() {
                       />
 
                     </button>
+
+                    {changePasswordOpen && (
+                      <form onSubmit={updatePassword} className="mt-5 rounded-2xl border border-[#99f6e4] bg-[#f0fdfa] p-5">
+                        <h4 className="text-sm font-bold text-[#0f766e]">Set a new password</h4>
+                        <p className="mt-1 text-xs text-[#52716b]">
+                          {isRecoverySession
+                            ? "Use at least 8 characters and keep it unique."
+                            : "Confirm your current password before choosing a new one."}
+                        </p>
+
+                        {!isRecoverySession && (
+                          <>
+                            <label htmlFor="current-password" className="mt-4 block text-xs font-semibold text-gray-700">Current password</label>
+                            <input
+                              id="current-password"
+                              type="password"
+                              value={currentPassword}
+                              onChange={(event) => setCurrentPassword(event.target.value)}
+                              autoComplete="current-password"
+                              className="mt-2 w-full rounded-xl border border-[#d9e7df] px-4 py-3 text-sm outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10"
+                            />
+                          </>
+                        )}
+
+                        <label htmlFor="new-password" className="mt-4 block text-xs font-semibold text-gray-700">New password</label>
+                        <input
+                          id="new-password"
+                          type="password"
+                          value={newPassword}
+                          onChange={(event) => setNewPassword(event.target.value)}
+                          autoComplete="new-password"
+                          className="mt-2 w-full rounded-xl border border-[#d9e7df] px-4 py-3 text-sm outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10"
+                        />
+
+                        <label htmlFor="confirm-password" className="mt-4 block text-xs font-semibold text-gray-700">Confirm new password</label>
+                        <input
+                          id="confirm-password"
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(event) => setConfirmPassword(event.target.value)}
+                          autoComplete="new-password"
+                          className="mt-2 w-full rounded-xl border border-[#d9e7df] px-4 py-3 text-sm outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10"
+                        />
+
+                        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                          <button type="button" onClick={() => setChangePasswordOpen(false)} className="rounded-lg border border-[#d9e7df] px-4 py-2.5 text-xs font-semibold text-gray-600">Cancel</button>
+                          <button type="submit" disabled={updatingPassword} className="rounded-lg bg-[#0f766e] px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">{updatingPassword ? "Updating..." : "Update password"}</button>
+                        </div>
+                      </form>
+                    )}
 
                     <div className="mt-8 p-5 rounded-2xl bg-[#fff7df] border border-[#fde68a]">
 
@@ -1429,7 +1623,8 @@ function Settings() {
                   DANGER ZONE
               ================================================== */}
 
-              <div className="mx-6 sm:mx-8 mb-8 pt-6 border-t border-[#e5ece7]">
+              {activeSection === "account" && (
+                <div className="mx-6 sm:mx-8 mb-8 pt-6 border-t border-[#e5ece7]">
 
                 <div className="p-5 rounded-2xl border border-red-100 bg-red-50/50 flex items-center gap-4">
 
@@ -1451,14 +1646,17 @@ function Settings() {
 
                   <button
                     type="button"
-                    className="px-4 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-bold hover:bg-red-100 cursor-pointer transition"
+                    disabled
+                    title="Account deletion is not available yet"
+                    className="px-4 py-2 rounded-lg border border-red-200 text-red-400 text-xs font-bold cursor-not-allowed opacity-70"
                   >
-                    Delete
+                    Unavailable
                   </button>
 
                 </div>
 
-              </div>
+                </div>
+              )}
 
             </section>
 

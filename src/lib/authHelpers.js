@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 
-export const redirectAfterAuth = async (navigate) => {
+export const redirectAfterAuth = async (navigate, destination = "/dashboard") => {
   try {
     // Get authenticated user
     const {
@@ -48,8 +48,8 @@ export const redirectAfterAuth = async (navigate) => {
     }
 
     // Profile fully completed
-    console.log("Profile complete → Dashboard");
-    navigate("/dashboard");
+    console.log("Profile complete → destination");
+    navigate(destination);
 
   } catch (error) {
     console.error("Profile check error:", error);

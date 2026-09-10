@@ -12,7 +12,7 @@ html {
 }
 
 :root {
-  --bg: #ffffff;
+  --bg: #fffdf2;
   --text: #111827;
   --text-h: #062f2f;
   --header-bg: #06383a;
@@ -24,16 +24,443 @@ html {
   --muted: #6b7280;
   --border: #e6eef2;
   --social-bg: #f8fafc;
-  --shadow: 0 8px 24px rgba(2,6,23,0.08);
+  --shadow: 0 10px 30px rgba(6, 47, 47, 0.08);
+  --shadow-hover: 0 16px 34px rgba(6, 47, 47, 0.12);
+  --focus-ring: 0 0 0 4px rgba(15, 118, 110, 0.14);
+  --control-height: 44px;
 }
 
 body {
   margin: 0;
   font-family: 'Poppins', sans-serif;
-  background-color: var(--bg);
+  background-color: #f7f4eb;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Shared workspace styling for the authenticated application. */
+.app-shell {
+  --workspace-bg: #f7f4eb;
+  --workspace-teal: #064b4b;
+  --workspace-teal-dark: #043d3d;
+  --workspace-mint: #eaf5ef;
+  --workspace-border: #dce8e1;
+  background: var(--workspace-bg) !important;
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+
+.app-shell > aside {
+  background: linear-gradient(180deg, var(--workspace-teal) 0%, var(--workspace-teal-dark) 100%) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 8px 0 28px rgba(4, 61, 61, 0.08);
+}
+
+.app-shell > aside > div:first-child {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.app-shell > aside nav a {
+  min-height: 44px;
+  border-radius: 12px;
+  letter-spacing: -0.01em;
+}
+
+.app-shell > aside nav a:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.app-shell > aside nav a[class*="bg-[#f59e0b]"],
+.app-shell > aside nav a.bg-amber-500 {
+  background: #f59e0b !important;
+  color: #063f3f !important;
+  box-shadow: 0 8px 18px rgba(245, 158, 11, 0.18);
+}
+
+.app-shell > aside > div:last-child {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.app-shell > div > header {
+  position: relative;
+  z-index: 50;
+  min-height: 76px;
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: var(--workspace-border) !important;
+  box-shadow: 0 4px 18px rgba(6, 47, 47, 0.04);
+  backdrop-filter: blur(14px);
+}
+
+.app-shell > div > main {
+  background: transparent;
+}
+
+.app-shell main .bg-white {
+  border-color: var(--workspace-border) !important;
+  box-shadow: 0 8px 24px rgba(6, 47, 47, 0.045);
+}
+
+.app-shell main .bg-white:hover {
+  border-color: #c8ddd3 !important;
+}
+
+.dashboard-content,
+.discover-content,
+.skills-content,
+.requests-content,
+.messages-content,
+.notifications-content,
+.settings-content {
+  max-width: 1380px;
+}
+
+.dashboard-intro h2,
+.discover-intro h2,
+.skills-intro h2 {
+  color: #073f3f;
+  letter-spacing: -0.04em;
+}
+
+.dashboard-intro p,
+.discover-intro p,
+.skills-intro p,
+.requests-intro p,
+.notifications-intro p,
+.settings-intro p {
+  color: #71817c;
+}
+
+.requests-summary,
+.requests-tabs,
+.notifications-tabs {
+  border-radius: 18px !important;
+}
+
+.requests-summary {
+  background: linear-gradient(115deg, #ffffff 0%, #f4fbf7 100%) !important;
+}
+
+.requests-tabs,
+.notifications-tabs {
+  box-shadow: 0 6px 18px rgba(6, 47, 47, 0.04) !important;
+}
+
+.requests-content {
+  max-width: 1120px;
+}
+
+.requests-tabs {
+  border-radius: 12px !important;
+  padding: 0.25rem !important;
+}
+
+.requests-tabs button {
+  min-height: 40px;
+  border-radius: 9px !important;
+  font-size: 0.72rem;
+}
+
+.request-row {
+  min-height: 112px;
+}
+
+.request-row > div {
+  align-items: center;
+}
+
+.request-row [class*="rounded-[24px]"] {
+  border-radius: 12px !important;
+}
+
+.request-row button {
+  min-height: 38px;
+  border-radius: 9px !important;
+  font-size: 0.72rem;
+}
+
+.messages-content {
+  max-width: 1480px;
+}
+
+.messages-content > div {
+  border-color: var(--workspace-border) !important;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(6, 47, 47, 0.05);
+}
+
+.messages-content > div > section:first-child {
+  width: 300px;
+  flex: 0 0 300px;
+}
+
+.messages-content > div > section:first-child > div:first-child {
+  padding: 1rem;
+}
+
+.messages-content > div > section:first-child > div:first-child h2 {
+  font-size: 1rem;
+}
+
+.conversation-row {
+  min-height: 74px;
+}
+
+.messages-content > div > section:last-child > div:first-child {
+  height: 64px;
+}
+
+.messages-content > div > section:last-child > div:nth-child(2) {
+  margin-top: 0.75rem;
+  margin-left: 1rem;
+  margin-right: 1rem;
+  border-radius: 12px;
+  background: #eaf7f2;
+}
+
+.messages-content > div > section:last-child > div:last-child {
+  padding: 0.75rem 1rem;
+}
+
+.settings-content > div > aside,
+.settings-content > div > section {
+  border-radius: 18px !important;
+}
+
+.settings-content > div > aside {
+  box-shadow: 0 6px 18px rgba(6, 47, 47, 0.04);
+}
+
+.settings-content > div > section {
+  box-shadow: 0 8px 24px rgba(6, 47, 47, 0.05);
+}
+
+.dashboard-hero-card {
+  min-height: 196px;
+  background: linear-gradient(110deg, #087878 0%, #0f766e 70%, #0a655f 100%) !important;
+  box-shadow: 0 14px 30px rgba(6, 118, 110, 0.16);
+}
+
+.dashboard-profile-card {
+  min-height: 132px;
+}
+
+.dashboard-journey-card {
+  min-height: 132px;
+  position: relative;
+  background: linear-gradient(120deg, #087878 0%, #075f61 100%);
+  box-shadow: 0 12px 25px rgba(6, 118, 110, 0.14);
+}
+
+.dashboard-journey-mark {
+  width: 76px;
+  height: 76px;
+  border-radius: 50% 50% 12px 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-12deg);
+  color: #fbbf24;
+  background: rgba(255, 255, 255, 0.13);
+  font-size: 2rem;
+}
+
+.recommendation-card {
+  min-height: 170px;
+}
+
+.dashboard-stats > div,
+.discover-card,
+.skill-panel {
+  border-radius: 18px !important;
+}
+
+.dashboard-stats > div {
+  min-height: 116px;
+  display: flex;
+  align-items: center;
+}
+
+.discover-toolbar {
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.86) !important;
+}
+
+.discover-card {
+  min-height: 300px;
+  padding: 1.15rem !important;
+}
+
+.skills-grid .skill-panel > div:first-child {
+  background: #fbfdfb;
+}
+
+.skills-grid .skill-panel > div:last-child {
+  min-height: 260px;
+}
+
+.skills-grid .skill-panel {
+  background: #fff !important;
+}
+
+.skills-grid .skill-panel > div:first-child {
+  padding: 1rem 1.25rem;
+}
+
+.skill-list {
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+}
+
+.skill-row {
+  min-height: 54px;
+  position: relative;
+  padding-left: 2.75rem !important;
+}
+
+.skill-row::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.65rem;
+  background: #eaf7f2;
+  box-shadow: inset 0 0 0 1px #c9e9dc;
+}
+
+.skill-row button[aria-label^="Edit"] {
+  margin-left: auto;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.5rem;
+  background: #f5f8f6;
+  color: #54716b !important;
+  font-size: 0.65rem;
+}
+
+.skill-row button[aria-label^="Remove"] {
+  color: #9aa9a4;
+  font-size: 0.7rem;
+}
+
+.skills-cta {
+  background: linear-gradient(100deg, #dff6ed 0%, #c8eee3 100%);
+  color: #075353;
+}
+
+.skills-cta h3 {
+  color: #075353 !important;
+}
+
+.skills-cta p {
+  color: #4c7770 !important;
+}
+
+.app-shell input,
+.app-shell textarea,
+.app-shell select {
+  border-color: var(--workspace-border);
+  background-color: #fff;
+}
+
+@media (max-width: 640px) {
+  .app-shell > div > header {
+    min-height: 68px;
+  }
+
+  .app-shell > div > main {
+    padding-top: 1rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .app-shell main .bg-white {
+    box-shadow: 0 5px 16px rgba(6, 47, 47, 0.04);
+  }
+
+  .dashboard-hero-card {
+    min-height: 0;
+  }
+
+  .dashboard-profile-card,
+  .dashboard-journey-card {
+    min-height: 124px;
+  }
+
+  .skill-row {
+    min-height: 50px;
+  }
+
+  .discover-card {
+    min-height: 0;
+  }
+
+  .messages-content {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .messages-content > div > section:first-child {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .dashboard-stats > div {
+    min-height: 96px;
+  }
+}
+
+::selection {
+  background: #fde68a;
+  color: #062f2f;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: ease-out;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Make form elements inherit the website font */
@@ -42,4 +469,28 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+.notification-row {
+  min-height: 88px;
+}
+
+.notification-row:hover {
+  transform: translateY(-1px);
+}
+
+.notification-popup {
+  transform: translateX(0);
+}
+
+@media (max-width: 640px) {
+  .notification-popup {
+    position: fixed;
+    top: 4.25rem;
+    left: 50%;
+    right: auto;
+    width: calc(100vw - 1rem);
+    max-width: 400px;
+    transform: translateX(-50%);
+  }
 }

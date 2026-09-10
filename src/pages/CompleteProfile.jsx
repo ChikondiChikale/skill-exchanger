@@ -14,6 +14,19 @@ import {
 
 import { supabase } from "../lib/supabase";
 
+const locations = {
+  Malawi: ["Lilongwe", "Blantyre", "Mzuzu", "Zomba", "Kasungu"],
+  Kenya: ["Nairobi", "Mombasa", "Kisumu", "Nakuru", "Eldoret"],
+  Nigeria: ["Lagos", "Abuja", "Kano", "Ibadan", "Port Harcourt"],
+  Uganda: ["Kampala", "Entebbe", "Jinja", "Mbarara", "Gulu"],
+  Zambia: ["Lusaka", "Kitwe", "Ndola", "Livingstone", "Chipata"],
+  Zimbabwe: ["Harare", "Bulawayo", "Mutare", "Gweru", "Masvingo"],
+  Tanzania: ["Dar es Salaam", "Dodoma", "Arusha", "Mwanza", "Mbeya"],
+  Ghana: ["Accra", "Kumasi", "Tamale", "Takoradi", "Cape Coast"],
+  "South Africa": ["Johannesburg", "Cape Town", "Durban", "Pretoria", "Gqeberha"],
+  Other: [],
+};
+
 function CompleteProfile() {
   const navigate = useNavigate();
 
@@ -30,6 +43,15 @@ function CompleteProfile() {
   const [error, setError] = useState("");
 
   const handleChange = (e) => {
+    if (e.target.name === "country") {
+      setFormData({
+        ...formData,
+        country: e.target.value,
+        city: "",
+      });
+      return;
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -293,14 +315,19 @@ function CompleteProfile() {
                     className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
                   />
 
-                  <input
-                    type="text"
+                  <select
                     name="country"
                     value={formData.country}
                     onChange={handleChange}
-                    placeholder="e.g. Malawi"
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-[#d9e7df] outline-none focus:ring-2 focus:ring-[#0f766e]/20 focus:border-[#0f766e] transition"
-                  />
+                    className="w-full appearance-none bg-white pl-11 pr-4 py-3.5 rounded-xl border border-[#d9e7df] outline-none focus:ring-2 focus:ring-[#0f766e]/20 focus:border-[#0f766e] transition"
+                  >
+                    <option value="">Select your country</option>
+                    {Object.keys(locations).map((country) => (
+                      <option key={country} value={country}>
+                        {country}
+                      </option>
+                    ))}
+                  </select>
 
                 </div>
 
@@ -323,14 +350,22 @@ function CompleteProfile() {
                     className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
                   />
 
-                  <input
-                    type="text"
+                  <select
                     name="city"
                     value={formData.city}
                     onChange={handleChange}
-                    placeholder="e.g. Mzuzu"
-                    className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-[#d9e7df] outline-none focus:ring-2 focus:ring-[#0f766e]/20 focus:border-[#0f766e] transition"
-                  />
+                    disabled={!formData.country || formData.country === "Other"}
+                    className="w-full appearance-none bg-white pl-11 pr-4 py-3.5 rounded-xl border border-[#d9e7df] outline-none focus:ring-2 focus:ring-[#0f766e]/20 focus:border-[#0f766e] transition disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
+                  >
+                    <option value="">
+                      {formData.country === "Other" ? "City selection unavailable" : formData.country ? "Select your city" : "Select a country first"}
+                    </option>
+                    {(locations[formData.country] || []).map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
 
                 </div>
 

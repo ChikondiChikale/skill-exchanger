@@ -8,9 +8,12 @@ import Dashboard from "./pages/Dashboard";
 import MySkills from "./pages/MySkills";
 import Discover from "./pages/Discover";
 import Messages from "./pages/Messages";
+
 import Settings from "./pages/Settings";
 import CompleteProfile from "./pages/CompleteProfile";
 import AuthCallback from "./pages/AuthCallback";
+import ExchangeRequests from "./pages/ExchangeRequests";
+import Notifications from "./pages/Notifications";
 
 function App() {
   return (
@@ -23,12 +26,20 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/skills" element={<MySkills />} />
         <Route path="/discover" element={<Discover />} />
+        <Route path="/exchange-requests" element={<ExchangeRequests />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/complete-profile" element={<CompleteProfile />}/>
+        
+      
         <Route
   path="/auth/callback"
   element={<AuthCallback />}
+/>
+
+ <Route
+  path="/notifications"
+  element={<Notifications />}
 />
 
 

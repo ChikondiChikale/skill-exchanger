@@ -14,9 +14,14 @@ import {
   faHandshake,
   faBars,
   faXmark,
+  faCheck,
+  faChevronDown,
+  faUser,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { supabase } from "../lib/supabase";
+import { usePendingExchangeRequests } from "../lib/usePendingExchangeRequests";
+import NotificationBell from "../components/NotificationBell";
 
 function formatMessageTime(dateString) {
   if (!dateString) return "";
@@ -50,11 +55,29 @@ function getInitials(name = "User") {
     .join("") || "U";
 }
 
+function formatMessageDate(dateString) {
+  const date = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+
+  return date.toLocaleDateString([], {
+    month: "long",
+    day: "numeric",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  });
+}
+
 function Messages() {
   const location = useLocation();
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const pendingRequestCount = usePendingExchangeRequests();
   const [conversations, setConversations] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState("");
@@ -68,6 +91,9 @@ function Messages() {
   const [error, setError] = useState("");
   const channelRef = useRef(null);
   const selectedIdRef = useRef(null);
+  const messagesScrollRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const shouldAutoScrollRef = useRef(true);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -114,6 +140,8 @@ function Messages() {
       text: item.content,
       time: formatMessageTime(item.created_at),
       createdAt: item.created_at,
+      dateLabel: formatMessageDate(item.created_at),
+      readAt: item.read_at,
     }));
 
     setConversations((current) =>
@@ -125,6 +153,29 @@ function Messages() {
     );
 
     setLoadingMessages(false);
+  };
+
+  useEffect(() => {
+    if (!selectedConversation || loadingMessages || !shouldAutoScrollRef.current) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    });
+  }, [selectedConversation?.id, selectedConversation?.messages.length, loadingMessages]);
+
+  const handleMessagesScroll = () => {
+    const container = messagesScrollRef.current;
+    if (!container) return;
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    shouldAutoScrollRef.current = distanceFromBottom < 120;
   };
 
   const loadConversations = async (user) => {
@@ -188,7 +239,7 @@ function Messages() {
 
     const { data: recentMessages, error: recentMessagesError } = await supabase
       .from("messages")
-      .select("id, conversation_id, sender_id, content, created_at")
+      .select("id, conversation_id, sender_id, content, created_at, read_at")
       .in("conversation_id", conversationIds)
       .order("created_at", { ascending: false });
 
@@ -230,6 +281,9 @@ function Messages() {
           preview: latest?.content || "Start your skill exchange conversation.",
           time: latest ? formatMessageTime(latest.created_at) : "New",
           lastMessageAt: latest?.created_at || null,
+          unread: Boolean(
+            latest && latest.sender_id !== user.id && !latest.read_at
+          ),
           messages: [],
         };
       })
@@ -313,7 +367,9 @@ function Messages() {
       (conversation) => conversation.id === conversationId
     );
 
-    if (conversationExists) {
+    if (!conversationExists) return;
+
+    const selectLinkedConversation = window.setTimeout(() => {
       setSelectedId(conversationId);
       setMobileChat(true);
 
@@ -321,12 +377,19 @@ function Messages() {
         replace: true,
         state: {},
       });
-    }
+    }, 0);
+
+    return () => window.clearTimeout(selectLinkedConversation);
   }, [location.state, conversations, navigate]);
 
   useEffect(() => {
     if (!currentUser || !selectedId) return;
-    loadMessages(selectedId);
+
+    const loadSelectedMessages = window.setTimeout(() => {
+      loadMessages(selectedId);
+    }, 0);
+
+    return () => window.clearTimeout(loadSelectedMessages);
   }, [selectedId, currentUser?.id]);
 
   useEffect(() => {
@@ -374,9 +437,27 @@ function Messages() {
     };
   }, [currentUser?.id]);
 
-  const selectConversation = (id) => {
+  const selectConversation = async (id) => {
     setSelectedId(id);
     setMobileChat(true);
+    shouldAutoScrollRef.current = true;
+
+    if (currentUser?.id) {
+      await supabase
+        .from("messages")
+        .update({ read_at: new Date().toISOString() })
+        .eq("conversation_id", id)
+        .neq("sender_id", currentUser.id)
+        .is("read_at", null);
+
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === id
+            ? { ...conversation, unread: false }
+            : conversation
+        )
+      );
+    }
   };
 
   const sendMessage = async () => {
@@ -410,6 +491,8 @@ function Messages() {
       text: data.content,
       time: formatMessageTime(data.created_at),
       createdAt: data.created_at,
+      dateLabel: formatMessageDate(data.created_at),
+      readAt: data.read_at,
     };
 
     setConversations((current) =>
@@ -446,7 +529,7 @@ function Messages() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fffdf2] text-[#062f2f]">
+    <div className="app-shell min-h-screen bg-[#fffdf2] text-[#062f2f]">
 
       {sidebarOpen && (
         <div
@@ -457,7 +540,7 @@ function Messages() {
 
       {/* ================= SIDEBAR ================= */}
 
-      <aside className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <aside className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] text-white flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
         {/* Logo */}
 
@@ -498,11 +581,7 @@ function Messages() {
 
         {/* Navigation */}
 
-        <nav className="flex-1 px-4 py-7">
-
-          <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-            Menu
-          </p>
+        <nav className="px-4 space-y-2 flex-1">
 
           <div className="space-y-1.5">
 
@@ -543,7 +622,7 @@ function Messages() {
 
             <Link
               to="/messages"
-              className="flex items-center justify-between px-3.5 py-3 rounded-xl bg-[#f59e0b] text-white font-semibold shadow-lg cursor-pointer"
+              className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#f59e0b] text-[#062f2f] font-semibold transition cursor-pointer"
             >
 
               <div className="flex items-center gap-3">
@@ -562,13 +641,27 @@ function Messages() {
 
             </Link>
 
+            <Link
+              to="/exchange-requests"
+              className="group flex items-center justify-between px-3.5 py-3 rounded-xl text-white/65 hover:bg-white/10 hover:text-white transition cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg flex items-center justify-center group-hover:bg-white/10">
+                  <FontAwesomeIcon icon={faHandshake} />
+                </span>
+                <span>Exchange Requests</span>
+              </div>
+
+              {pendingRequestCount > 0 && (
+                <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#f59e0b] text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
+                </span>
+              )}
+            </Link>
+
           </div>
 
-          <div className="mt-10">
-
-            <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-              More
-            </p>
+          <div className="space-y-2">
 
             <Link
               to="/settings"
@@ -626,44 +719,65 @@ function Messages() {
               <FontAwesomeIcon icon={faBars} />
             </button>
 
-            <div>
-
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[#0f766e]">
-                Communication
-              </p>
-
-              <h1 className="text-lg font-bold">
-                Messages
-              </h1>
-
-            </div>
-
           </div>
 
           <div className="flex items-center gap-3">
 
-            {currentProfile?.avatar_url ? (
-              <img
-                src={currentProfile.avatar_url}
-                alt={currentProfile.full_name || "Profile"}
-                className="w-10 h-10 rounded-full object-cover"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold">
-                {getInitials(currentProfile?.full_name || currentProfile?.username || "Chikondi")}
-              </div>
-            )}
+            <NotificationBell />
 
-            <div className="hidden sm:block">
+            <div className="relative">
+              <button
+                onClick={() => setProfileMenuOpen((previous) => !previous)}
+                aria-label="Open profile menu"
+                className="flex items-center gap-2 sm:gap-3 cursor-pointer"
+              >
+                {currentProfile?.avatar_url ? (
+                  <img
+                    src={currentProfile.avatar_url}
+                    alt={currentProfile.full_name || "Profile"}
+                    className="w-10 h-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold">
+                    {getInitials(currentProfile?.full_name || currentProfile?.username || "User")}
+                  </div>
+                )}
 
-              <p className="text-sm font-bold">
-                {currentProfile?.full_name || currentProfile?.username || "Chikondi"}
-              </p>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-semibold text-[#062f2f]">
+                    {currentProfile?.full_name || currentProfile?.username || "User"}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {currentProfile?.occupation || "Member"}
+                  </p>
+                </div>
 
-              <p className="text-[11px] text-gray-400">
-                {currentProfile?.occupation || "Member"}
-              </p>
+                <FontAwesomeIcon icon={faChevronDown} className="text-xs text-gray-400" />
+              </button>
 
+              {profileMenuOpen && (
+                <div className="absolute right-0 top-14 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-2 z-30">
+                  <Link
+                    to="/settings"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faUser} />
+                    Profile & Settings
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faRightFromBracket} />
+                    Logout
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>
@@ -672,7 +786,7 @@ function Messages() {
 
         {/* ================= CONTENT ================= */}
 
-        <main className="h-[calc(100vh-78px)] p-4 sm:p-6 lg:p-8">
+        <main className="messages-content h-[calc(100dvh-78px)] overflow-hidden p-2 sm:p-4 lg:p-5">
 
           {error && (
             <div className="mb-4 max-w-[1400px] mx-auto px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-sm">
@@ -680,12 +794,12 @@ function Messages() {
             </div>
           )}
 
-          <div className="h-full max-w-[1400px] mx-auto bg-white border border-[#d9e7df] rounded-[24px] overflow-hidden shadow-sm flex">
+          <div className="h-full min-h-0 max-w-[1400px] mx-auto bg-white border border-[#d9e7df] rounded-[24px] overflow-hidden shadow-sm flex">
 
             {/* ================= CONVERSATIONS ================= */}
 
             <section
-              className={`w-full md:w-[350px] lg:w-[380px] border-r border-[#d9e7df] flex flex-col ${
+              className={`w-full min-h-0 md:w-[350px] lg:w-[380px] border-r border-[#d9e7df] flex flex-col ${
                 mobileChat ? "hidden md:flex" : "flex"
               }`}
             >
@@ -737,7 +851,7 @@ function Messages() {
 
               {/* Conversation List */}
 
-              <div className="flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 
                 {loading ? (
                   <div className="p-8 text-center">
@@ -763,7 +877,7 @@ function Messages() {
                   <button
                     key={conversation.id}
                     onClick={() => selectConversation(conversation.id)}
-                    className={`w-full text-left p-4 flex gap-3 border-b border-[#eef2ef] cursor-pointer transition ${
+                    className={`conversation-row w-full text-left p-3 flex gap-3 border-b border-[#eef2ef] cursor-pointer transition ${
                       selectedId === conversation.id
                         ? "bg-[#f0fdfa]"
                         : "hover:bg-[#fafcfb]"
@@ -778,11 +892,11 @@ function Messages() {
                         <img
                           src={conversation.avatar_url}
                           alt={conversation.name}
-                          className="w-11 h-11 rounded-2xl object-cover"
+                          className="w-11 h-11 rounded-full object-cover"
                         />
                       ) : (
                         <div
-                          className={`w-11 h-11 rounded-2xl flex items-center justify-center font-extrabold ${
+                          className={`w-11 h-11 rounded-full flex items-center justify-center font-extrabold ${
                             selectedId === conversation.id
                               ? "bg-[#0f766e] text-white"
                               : "bg-[#ccfbf1] text-[#0f766e]"
@@ -808,9 +922,17 @@ function Messages() {
                           {conversation.name}
                         </h3>
 
-                        <span className="text-[10px] text-gray-400 shrink-0">
-                          {conversation.time}
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {conversation.unread && (
+                            <span
+                              className="w-2 h-2 rounded-full bg-[#f59e0b]"
+                              title="Unread message"
+                            />
+                          )}
+                          <span className="text-[10px] text-gray-400">
+                            {conversation.time}
+                          </span>
+                        </div>
 
                       </div>
 
@@ -818,7 +940,7 @@ function Messages() {
                         {conversation.skill} exchange
                       </p>
 
-                      <p className="text-xs text-gray-500 truncate mt-1">
+                      <p className={`text-xs truncate mt-1 ${conversation.unread ? "text-[#062f2f] font-semibold" : "text-gray-500"}`}>
                         {conversation.preview}
                       </p>
 
@@ -837,7 +959,7 @@ function Messages() {
             {/* ================= CHAT ================= */}
 
             <section
-              className={`flex-1 min-w-0 ${
+              className={`flex-1 min-h-0 min-w-0 ${
                 mobileChat ? "flex" : "hidden md:flex"
               } flex-col`}
             >
@@ -848,7 +970,7 @@ function Messages() {
 
                   {/* Chat Header */}
 
-                  <div className="h-[76px] px-4 sm:px-6 border-b border-[#d9e7df] flex items-center justify-between">
+                  <div className="h-[76px] shrink-0 px-4 sm:px-6 border-b border-[#d9e7df] flex items-center justify-between bg-white">
 
                     <div className="flex items-center gap-3 min-w-0">
 
@@ -865,10 +987,10 @@ function Messages() {
                           <img
                             src={selectedConversation.avatar_url}
                             alt={selectedConversation.name}
-                            className="w-11 h-11 rounded-2xl object-cover"
+                            className="w-11 h-11 rounded-full object-cover"
                           />
                         ) : (
-                          <div className="w-11 h-11 rounded-2xl bg-[#ccfbf1] text-[#0f766e] flex items-center justify-center font-extrabold">
+                          <div className="w-11 h-11 rounded-full bg-[#ccfbf1] text-[#0f766e] flex items-center justify-center font-extrabold">
                             {selectedConversation.initials}
                           </div>
                         )}
@@ -907,7 +1029,7 @@ function Messages() {
 
                   {/* Skill Exchange Banner */}
 
-                  <div className="mx-4 sm:mx-6 mt-5 p-4 rounded-2xl bg-[#062f2f] flex items-center gap-3">
+                  <div className="mx-4 sm:mx-6 mt-5 shrink-0 p-4 rounded-2xl bg-[#062f2f] flex items-center gap-3">
 
                     <div className="w-10 h-10 rounded-xl bg-white/10 text-[#fbbf24] flex items-center justify-center shrink-0">
 
@@ -931,7 +1053,11 @@ function Messages() {
 
                   {/* Messages */}
 
-                  <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+                  <div
+                    ref={messagesScrollRef}
+                    onScroll={handleMessagesScroll}
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-5"
+                  >
 
                     <div className="max-w-3xl mx-auto space-y-4">
 
@@ -940,45 +1066,65 @@ function Messages() {
                           Loading messages...
                         </div>
                       ) : (
-                        selectedConversation.messages.map((item) => (
+                        selectedConversation.messages.map((item, index) => (
 
-                          <div
-                            key={item.id}
-                            className={`flex ${
-                              item.sender === "me"
-                                ? "justify-end"
-                                : "justify-start"
-                            }`}
-                          >
+                          <div key={`${item.id}-group`}>
+                            {(index === 0 || selectedConversation.messages[index - 1].dateLabel !== item.dateLabel) && (
+                              <div className="flex items-center gap-3 my-5">
+                                <div className="h-px flex-1 bg-[#e5ece7]" />
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                                  {item.dateLabel}
+                                </span>
+                                <div className="h-px flex-1 bg-[#e5ece7]" />
+                              </div>
+                            )}
 
                             <div
-                              className={`max-w-[80%] sm:max-w-[65%] ${
+                              className={`flex ${
                                 item.sender === "me"
-                                  ? "items-end"
-                                  : "items-start"
-                              } flex flex-col`}
+                                  ? "justify-end"
+                                  : "justify-start"
+                              }`}
                             >
 
                               <div
-                                className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                                className={`max-w-[80%] sm:max-w-[65%] ${
                                   item.sender === "me"
-                                    ? "bg-[#0f766e] text-white rounded-br-md"
-                                    : "bg-[#f3f6f4] text-[#062f2f] rounded-bl-md"
-                                }`}
+                                    ? "items-end"
+                                    : "items-start"
+                                } flex flex-col`}
                               >
-                                {item.text}
+
+                                <div
+                                  className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                                    item.sender === "me"
+                                      ? "bg-[#0f766e] text-white rounded-br-md"
+                                      : "bg-[#f3f6f4] text-[#062f2f] rounded-bl-md"
+                                  }`}
+                                >
+                                  {item.text}
+                                </div>
+
+                                <span className="text-[10px] text-gray-400 mt-1 px-1 flex items-center gap-1">
+                                  {item.time}
+                                  {item.sender === "me" && (
+                                    <FontAwesomeIcon
+                                      icon={faCheck}
+                                      className={item.readAt ? "text-[#0f766e]" : "text-gray-400"}
+                                      title={item.readAt ? "Read" : "Sent"}
+                                    />
+                                  )}
+                                </span>
+
                               </div>
 
-                              <span className="text-[10px] text-gray-400 mt-1 px-1">
-                                {item.time}
-                              </span>
-
                             </div>
-
                           </div>
 
                         ))
                       )}
+
+                      <div ref={messagesEndRef} aria-hidden="true" />
 
                     </div>
 
@@ -986,7 +1132,7 @@ function Messages() {
 
                   {/* Message Input */}
 
-                  <div className="p-4 sm:p-5 border-t border-[#d9e7df]">
+                  <div className="shrink-0 p-4 sm:p-5 border-t border-[#d9e7df] bg-white">
 
                     <div className="max-w-3xl mx-auto flex items-end gap-2">
 
@@ -1044,6 +1190,13 @@ function Messages() {
                     <p className="text-sm text-gray-500 mt-2">
                       Select a conversation to start chatting.
                     </p>
+
+                    <Link
+                      to="/discover"
+                      className="inline-flex items-center gap-2 mt-5 px-5 py-3 rounded-xl bg-[#0f766e] text-white text-sm font-semibold hover:bg-[#115e59]"
+                    >
+                      Discover people
+                    </Link>
 
                   </div>
 

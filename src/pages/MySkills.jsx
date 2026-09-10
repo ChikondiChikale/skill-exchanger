@@ -12,10 +12,15 @@ import {
   faHandshake,
   faBars,
   faXmark,
+  faPen,
+  faChevronDown,
+  faUser,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { usePendingExchangeRequests } from "../lib/usePendingExchangeRequests";
+import NotificationBell from "../components/NotificationBell";
 
 // ================= INITIALS HELPER =================
 
@@ -31,6 +36,8 @@ function getInitials(name = "") {
 
 function MySkills() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const pendingRequestCount = usePendingExchangeRequests();
 
   const [teachSkills, setTeachSkills] = useState([]);
   const [learnSkills, setLearnSkills] = useState([]);
@@ -43,22 +50,18 @@ function MySkills() {
 
   const [showTeachForm, setShowTeachForm] = useState(false);
   const [showLearnForm, setShowLearnForm] = useState(false);
+  const [showSkillTypeDialog, setShowSkillTypeDialog] = useState(false);
 
   const [teachInput, setTeachInput] = useState("");
   const [learnInput, setLearnInput] = useState("");
+  const [editingSkillId, setEditingSkillId] = useState(null);
+  const [editingSkillName, setEditingSkillName] = useState("");
 
   // ================= STATUS =================
 
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
-
-  // ================= LOAD DATA =================
-
-  useEffect(() => {
-    fetchSkills();
-    fetchProfile();
-  }, []);
 
   // ================= LOAD PROFILE =================
 
@@ -152,6 +155,17 @@ function MySkills() {
       setLoading(false);
     }
   };
+
+  // ================= LOAD DATA =================
+
+  useEffect(() => {
+    const loadData = window.setTimeout(() => {
+      fetchSkills();
+      fetchProfile();
+    }, 0);
+
+    return () => window.clearTimeout(loadData);
+  }, []);
 
   // ================= ADD TEACHING SKILL =================
 
@@ -312,6 +326,8 @@ function MySkills() {
   // ================= REMOVE TEACHING SKILL =================
 
   const removeTeachSkill = async (skillId) => {
+    if (!window.confirm("Remove this teaching skill?")) return;
+
     setError("");
 
     try {
@@ -345,6 +361,8 @@ function MySkills() {
   // ================= REMOVE LEARNING SKILL =================
 
   const removeLearnSkill = async (skillId) => {
+    if (!window.confirm("Remove this learning goal?")) return;
+
     setError("");
 
     try {
@@ -375,6 +393,58 @@ function MySkills() {
     }
   };
 
+  const startEditingSkill = (skill) => {
+    setEditingSkillId(skill.id);
+    setEditingSkillName(skill.skill_name);
+    setError("");
+  };
+
+  const saveSkillName = async (skillId, skillType) => {
+    const nextName = editingSkillName.trim();
+
+    if (!nextName) {
+      setError("Skill name cannot be empty.");
+      return;
+    }
+
+    const skills = skillType === "teach" ? teachSkills : learnSkills;
+    const duplicate = skills.some(
+      (skill) =>
+        skill.id !== skillId &&
+        skill.skill_name.toLowerCase() === nextName.toLowerCase()
+    );
+
+    if (duplicate) {
+      setError("You already have a skill with that name.");
+      return;
+    }
+
+    const { data, error: updateError } = await supabase
+      .from("skills")
+      .update({ skill_name: nextName })
+      .eq("id", skillId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error("Error updating skill:", updateError);
+      setError("Failed to update skill. Please try again.");
+      return;
+    }
+
+    const updateSkills = (current) =>
+      current.map((skill) => (skill.id === skillId ? data : skill));
+
+    if (skillType === "teach") {
+      setTeachSkills(updateSkills);
+    } else {
+      setLearnSkills(updateSkills);
+    }
+
+    setEditingSkillId(null);
+    setEditingSkillName("");
+  };
+
   // ================= LOGOUT =================
 
   const handleLogout = async () => {
@@ -383,7 +453,7 @@ function MySkills() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fffdf2] text-[#062f2f]">
+    <div className="app-shell min-h-screen bg-[#fffdf2] text-[#062f2f]">
 
       {/* ================= MOBILE OVERLAY ================= */}
 
@@ -397,7 +467,7 @@ function MySkills() {
       {/* ================= SIDEBAR ================= */}
 
       <aside
-        className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] text-white flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
           sidebarOpen
             ? "translate-x-0"
             : "-translate-x-full"
@@ -444,11 +514,7 @@ function MySkills() {
 
         {/* ================= NAVIGATION ================= */}
 
-        <nav className="flex-1 px-4 py-7">
-
-          <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-            Menu
-          </p>
+        <nav className="px-4 space-y-2 flex-1">
 
           <div className="space-y-1.5">
 
@@ -489,7 +555,7 @@ function MySkills() {
             <Link
               to="/skills"
               onClick={() => setSidebarOpen(false)}
-              className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[#f59e0b] text-white font-semibold shadow-lg cursor-pointer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f59e0b] text-[#062f2f] font-semibold transition cursor-pointer"
             >
 
               <span className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
@@ -524,15 +590,28 @@ function MySkills() {
 
             </Link>
 
+            <Link
+              to="/exchange-requests"
+              onClick={() => setSidebarOpen(false)}
+              className="group flex items-center justify-between px-3.5 py-3 rounded-xl text-white/65 hover:bg-white/10 hover:text-white transition cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg flex items-center justify-center group-hover:bg-white/10">
+                  <FontAwesomeIcon icon={faHandshake} />
+                </span>
+                <span>Exchange Requests</span>
+              </div>
+
+              {pendingRequestCount > 0 && (
+                <span className="min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#f59e0b] text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingRequestCount > 99 ? "99+" : pendingRequestCount}
+                </span>
+              )}
+            </Link>
+
           </div>
 
-          {/* ================= MORE ================= */}
-
-          <div className="mt-10">
-
-            <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-              More
-            </p>
+          <div className="space-y-2">
 
             <Link
               to="/settings"
@@ -593,16 +672,14 @@ function MySkills() {
               <FontAwesomeIcon icon={faBars} />
             </button>
 
-            <div>
-
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[#0f766e]">
-                Workspace
-              </p>
-
-              <h1 className="text-lg font-bold">
-                My Skills
-              </h1>
-
+            <div className="hidden sm:block relative w-full max-w-md">
+              <FontAwesomeIcon icon={faGraduationCap} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
+              <input
+                type="search"
+                placeholder="Search skills, people or topics..."
+                aria-label="Search skills, people or topics"
+                className="w-full rounded-xl border border-[#dce8e1] bg-[#fbfdfb] py-2.5 pl-9 pr-4 text-xs outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10"
+              />
             </div>
 
           </div>
@@ -611,35 +688,61 @@ function MySkills() {
 
           <div className="flex items-center gap-3">
 
-            <div className="w-10 h-10 rounded-full overflow-hidden bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold shrink-0">
+            <NotificationBell />
 
-              {profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt={
-                    profile.full_name ||
-                    "Profile"
-                  }
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                getInitials(
-                  profile?.full_name || "User"
-                )
+            <div className="relative">
+              <button
+                onClick={() => setProfileMenuOpen((previous) => !previous)}
+                aria-label="Open profile menu"
+                className="flex items-center gap-2 sm:gap-3 cursor-pointer"
+              >
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold shrink-0">
+                  {profile?.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt={profile.full_name || "Profile"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    getInitials(profile?.full_name || "User")
+                  )}
+                </div>
+
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-semibold text-[#062f2f]">
+                    {profile?.full_name || "User"}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {profile?.occupation || "Member"}
+                  </p>
+                </div>
+
+                <FontAwesomeIcon icon={faChevronDown} className="text-xs text-gray-400" />
+              </button>
+
+              {profileMenuOpen && (
+                <div className="absolute right-0 top-14 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-2 z-30">
+                  <Link
+                    to="/settings"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faUser} />
+                    Profile & Settings
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faRightFromBracket} />
+                    Logout
+                  </button>
+                </div>
               )}
-
-            </div>
-
-            <div className="hidden sm:block">
-
-              <p className="text-sm font-bold">
-                {profile?.full_name || "User"}
-              </p>
-
-              <p className="text-[11px] text-gray-400">
-                {profile?.occupation || "Member"}
-              </p>
-
             </div>
 
           </div>
@@ -648,29 +751,27 @@ function MySkills() {
 
         {/* ================= CONTENT ================= */}
 
-        <main className="max-w-[1400px] mx-auto px-5 sm:px-8 xl:px-10 py-8">
+        <main className="skills-content max-w-[1400px] mx-auto px-5 sm:px-8 xl:px-10 py-8">
 
           {/* ================= PAGE INTRO ================= */}
 
-          <section className="mb-8">
-
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#ccfbf1] text-[#0f766e] text-xs font-bold mb-4">
-
-              <FontAwesomeIcon icon={faGraduationCap} />
-
-              Skill management
-
+          <section className="skills-intro mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+                My Skills
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 max-w-2xl">
+                Manage the skills you can teach and want to learn.
+              </p>
             </div>
-
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              My Skills
-            </h2>
-
-            <p className="mt-2 text-gray-500 max-w-2xl">
-              Manage what you can teach and what you want
-              to learn. These skills will help us find the
-              right people for you.
-            </p>
+            <button
+              type="button"
+              onClick={() => setShowSkillTypeDialog(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#087878] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#065e5e]"
+            >
+              <FontAwesomeIcon icon={faPlus} />
+              Add Skill
+            </button>
 
           </section>
 
@@ -686,8 +787,13 @@ function MySkills() {
 
           {loading ? (
 
-            <div className="bg-white border border-[#d9e7df] rounded-[24px] p-10 text-center">
+            <div className="bg-white border border-[#d9e7df] rounded-2xl p-8 sm:p-10 text-center shadow-sm">
 
+              <div className="w-12 h-12 mx-auto mb-4 rounded-2xl bg-[#f0fdfa] text-[#0f766e] flex items-center justify-center">
+                <FontAwesomeIcon icon={faGraduationCap} />
+              </div>
+
+              <h3 className="font-bold text-[#062f2f]">Your skills workspace</h3>
               <p className="text-gray-500 text-sm">
                 Loading your skills...
               </p>
@@ -698,11 +804,11 @@ function MySkills() {
 
             /* ================= SKILL CARDS ================= */
 
-            <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <section className="skills-grid grid grid-cols-1 xl:grid-cols-2 gap-6">
 
               {/* ================= TEACH ================= */}
 
-              <div className="bg-white border border-[#d9e7df] rounded-[24px] overflow-hidden shadow-sm">
+              <div className="skill-panel bg-white border border-[#d9e7df] rounded-2xl overflow-hidden shadow-sm hover:shadow-[var(--shadow-hover)] transition">
 
                 <div className="p-6 border-b border-[#d9e7df] flex items-center justify-between">
 
@@ -738,31 +844,54 @@ function MySkills() {
 
                   {teachSkills.length > 0 && (
 
-                    <div className="flex flex-wrap gap-2 mb-5">
+                    <div className="skill-list mb-5">
 
                       {teachSkills.map((skill) => (
 
                         <div
                           key={skill.id}
-                          className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#fff7df] border border-[#fde68a] text-[#92400e] text-sm font-semibold"
+                          className="skill-row flex items-center gap-3 px-2 py-3 border-b border-[#edf2ee] text-sm font-semibold"
                         >
 
-                          {skill.skill_name}
+                          {editingSkillId === skill.id ? (
+                            <input
+                              value={editingSkillName}
+                              onChange={(event) => setEditingSkillName(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") saveSkillName(skill.id, "teach");
+                                if (event.key === "Escape") setEditingSkillId(null);
+                              }}
+                              className="w-32 bg-transparent border-b border-[#b45309] outline-none"
+                              autoFocus
+                            />
+                          ) : (
+                            <span>{skill.skill_name}</span>
+                          )}
+
+                          {editingSkillId === skill.id ? (
+                            <button
+                              onClick={() => saveSkillName(skill.id, "teach")}
+                              className="text-[#0f766e] cursor-pointer"
+                              aria-label={`Save ${skill.skill_name}`}
+                            >
+                              <FontAwesomeIcon icon={faPen} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => startEditingSkill(skill)}
+                              className="text-[#b45309]/60 hover:text-[#b45309] cursor-pointer"
+                              aria-label={`Edit ${skill.skill_name}`}
+                            >
+                              <FontAwesomeIcon icon={faPen} />
+                            </button>
+                          )}
 
                           <button
-                            onClick={() =>
-                              removeTeachSkill(
-                                skill.id
-                              )
-                            }
+                            onClick={() => removeTeachSkill(skill.id)}
                             className="hover:text-red-600 cursor-pointer"
                             aria-label={`Remove ${skill.skill_name}`}
                           >
-
-                            <FontAwesomeIcon
-                              icon={faXmark}
-                            />
-
+                            <FontAwesomeIcon icon={faXmark} />
                           </button>
 
                         </div>
@@ -775,7 +904,7 @@ function MySkills() {
 
                   {teachSkills.length === 0 && (
 
-                    <div className="text-center py-8">
+                    <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-[#d9e7df] bg-[#fffdf2]">
 
                       <p className="text-gray-500 text-sm">
                         You haven't added any teaching skills yet.
@@ -791,7 +920,8 @@ function MySkills() {
                       onClick={() =>
                         setShowTeachForm(true)
                       }
-                      className="w-full py-3 rounded-xl bg-[#062f2f] text-white font-bold text-sm hover:bg-[#0f766e] transition cursor-pointer"
+                      hidden
+                      className="w-full py-2.5 rounded-lg bg-[#eaf7f2] text-[#087878] font-bold text-xs hover:bg-[#d9eee5] transition cursor-pointer"
                     >
 
                       <FontAwesomeIcon
@@ -805,7 +935,7 @@ function MySkills() {
 
                   ) : (
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
 
                       <input
                         type="text"
@@ -829,7 +959,7 @@ function MySkills() {
                       <button
                         onClick={addTeachSkill}
                         disabled={adding}
-                        className="px-5 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] cursor-pointer disabled:opacity-50"
+                        className="min-h-12 px-5 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] cursor-pointer disabled:opacity-50"
                       >
                         {adding ? "..." : "Add"}
                       </button>
@@ -839,7 +969,7 @@ function MySkills() {
                           setShowTeachForm(false)
                         }
                         disabled={adding}
-                        className="w-12 rounded-xl border border-[#d9e7df] hover:bg-gray-50 cursor-pointer"
+                        className="w-full sm:w-12 min-h-12 rounded-xl border border-[#d9e7df] hover:bg-gray-50 cursor-pointer"
                       >
 
                         <FontAwesomeIcon
@@ -858,7 +988,7 @@ function MySkills() {
 
               {/* ================= LEARN ================= */}
 
-              <div className="bg-white border border-[#d9e7df] rounded-[24px] overflow-hidden shadow-sm">
+              <div className="skill-panel bg-white border border-[#d9e7df] rounded-2xl overflow-hidden shadow-sm hover:shadow-[var(--shadow-hover)] transition">
 
                 <div className="p-6 border-b border-[#d9e7df] flex items-center justify-between">
 
@@ -894,31 +1024,54 @@ function MySkills() {
 
                   {learnSkills.length > 0 && (
 
-                    <div className="flex flex-wrap gap-2 mb-5">
+                    <div className="skill-list mb-5">
 
                       {learnSkills.map((skill) => (
 
                         <div
                           key={skill.id}
-                          className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#f0fdfa] border border-[#99f6e4] text-[#0f766e] text-sm font-semibold"
+                          className="skill-row flex items-center gap-3 px-2 py-3 border-b border-[#edf2ee] text-sm font-semibold"
                         >
 
-                          {skill.skill_name}
+                          {editingSkillId === skill.id ? (
+                            <input
+                              value={editingSkillName}
+                              onChange={(event) => setEditingSkillName(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") saveSkillName(skill.id, "learn");
+                                if (event.key === "Escape") setEditingSkillId(null);
+                              }}
+                              className="w-32 bg-transparent border-b border-[#0f766e] outline-none"
+                              autoFocus
+                            />
+                          ) : (
+                            <span>{skill.skill_name}</span>
+                          )}
+
+                          {editingSkillId === skill.id ? (
+                            <button
+                              onClick={() => saveSkillName(skill.id, "learn")}
+                              className="text-[#0f766e] cursor-pointer"
+                              aria-label={`Save ${skill.skill_name}`}
+                            >
+                              <FontAwesomeIcon icon={faPen} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => startEditingSkill(skill)}
+                              className="text-[#0f766e]/60 hover:text-[#0f766e] cursor-pointer"
+                              aria-label={`Edit ${skill.skill_name}`}
+                            >
+                              <FontAwesomeIcon icon={faPen} />
+                            </button>
+                          )}
 
                           <button
-                            onClick={() =>
-                              removeLearnSkill(
-                                skill.id
-                              )
-                            }
+                            onClick={() => removeLearnSkill(skill.id)}
                             className="hover:text-red-600 cursor-pointer"
                             aria-label={`Remove ${skill.skill_name}`}
                           >
-
-                            <FontAwesomeIcon
-                              icon={faXmark}
-                            />
-
+                            <FontAwesomeIcon icon={faXmark} />
                           </button>
 
                         </div>
@@ -931,7 +1084,7 @@ function MySkills() {
 
                   {learnSkills.length === 0 && (
 
-                    <div className="text-center py-8">
+                    <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-[#d9e7df] bg-[#fffdf2]">
 
                       <p className="text-gray-500 text-sm">
                         You haven't added any learning skills yet.
@@ -947,7 +1100,8 @@ function MySkills() {
                       onClick={() =>
                         setShowLearnForm(true)
                       }
-                      className="w-full py-3 rounded-xl bg-[#0f766e] text-white font-bold text-sm hover:bg-[#062f2f] transition cursor-pointer"
+                      hidden
+                      className="w-full py-2.5 rounded-lg bg-[#eaf7f2] text-[#087878] font-bold text-xs hover:bg-[#d9eee5] transition cursor-pointer"
                     >
 
                       <FontAwesomeIcon
@@ -961,7 +1115,7 @@ function MySkills() {
 
                   ) : (
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
 
                       <input
                         type="text"
@@ -985,7 +1139,7 @@ function MySkills() {
                       <button
                         onClick={addLearnSkill}
                         disabled={adding}
-                        className="px-5 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] cursor-pointer disabled:opacity-50"
+                        className="min-h-12 px-5 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] cursor-pointer disabled:opacity-50"
                       >
                         {adding ? "..." : "Add"}
                       </button>
@@ -995,7 +1149,7 @@ function MySkills() {
                           setShowLearnForm(false)
                         }
                         disabled={adding}
-                        className="w-12 rounded-xl border border-[#d9e7df] hover:bg-gray-50 cursor-pointer"
+                        className="w-full sm:w-12 min-h-12 rounded-xl border border-[#d9e7df] hover:bg-gray-50 cursor-pointer"
                       >
 
                         <FontAwesomeIcon
@@ -1018,7 +1172,7 @@ function MySkills() {
 
           {/* ================= EXCHANGE CTA ================= */}
 
-          <section className="mt-6 bg-[#062f2f] rounded-[24px] p-7 sm:p-8">
+          <section className="skills-cta mt-5 rounded-2xl p-5 sm:p-6">
 
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
 
@@ -1061,6 +1215,81 @@ function MySkills() {
         </main>
 
       </div>
+
+      {showSkillTypeDialog && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#062f2f]/45 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="skill-type-title"
+          onClick={() => setShowSkillTypeDialog(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#0f766e]">
+                  Add a skill
+                </p>
+                <h2 id="skill-type-title" className="mt-1 text-xl font-bold text-[#073f3f]">
+                  What would you like to add?
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Choose whether this is a skill you can teach or want to learn.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSkillTypeDialog(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Close add skill dialog"
+              >
+                <FontAwesomeIcon icon={faXmark} />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSkillTypeDialog(false);
+                  setShowLearnForm(false);
+                  setShowTeachForm(true);
+                }}
+                className="flex items-center gap-3 rounded-xl border border-[#fde68a] bg-[#fff7df] p-4 text-left hover:border-[#f59e0b]"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f59e0b] text-white">
+                  <FontAwesomeIcon icon={faGraduationCap} />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-[#92400e]">I can teach</span>
+                  <span className="mt-0.5 block text-xs text-[#a16207]">Share your knowledge</span>
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSkillTypeDialog(false);
+                  setShowTeachForm(false);
+                  setShowLearnForm(true);
+                }}
+                className="flex items-center gap-3 rounded-xl border border-[#99f6e4] bg-[#f0fdfa] p-4 text-left hover:border-[#0f766e]"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0f766e] text-white">
+                  <FontAwesomeIcon icon={faBookOpen} />
+                </span>
+                <span>
+                  <span className="block text-sm font-bold text-[#0f766e]">I want to learn</span>
+                  <span className="mt-0.5 block text-xs text-[#52716b]">Set a learning goal</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

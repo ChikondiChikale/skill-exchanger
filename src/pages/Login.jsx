@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
 import {
@@ -48,6 +48,7 @@ function GoogleIcon() {
 
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -55,6 +56,9 @@ function Login() {
   });
 
   const [showPassword, setShowPassword] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -101,7 +105,7 @@ function Login() {
       }
 
       // Check profile after successful login
-      await redirectAfterAuth(navigate);
+      await redirectAfterAuth(navigate, location.state?.from || "/dashboard");
 
     } catch (error) {
       console.error("Login error:", error);
@@ -131,6 +135,9 @@ function Login() {
           options: {
             redirectTo:
               window.location.origin + "/auth/callback",
+            queryParams: {
+              prompt: "select_account",
+            },
           },
         });
 
@@ -151,6 +158,32 @@ function Login() {
       );
 
       setGoogleLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async (event) => {
+    event.preventDefault();
+    setError("");
+
+    const email = resetEmail.trim();
+
+    if (!email) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/settings`,
+      });
+
+      if (resetError) throw resetError;
+      setResetSent(true);
+    } catch (resetError) {
+      setError(resetError.message || "Unable to send the password reset email.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -191,11 +224,11 @@ function Login() {
         <div className="bg-white rounded-lg shadow-sm border border-[#d9e7df] p-8">
 
           <h2 className="text-2xl font-bold text-[#062f2f]">
-            Welcome Back
+            {forgotMode ? "Reset your password" : "Welcome Back"}
           </h2>
 
           <p className="mt-2 text-gray-500">
-            Login to your Skill Exchanger account.
+            {forgotMode ? "Enter your email and we will send you a secure reset link." : "Login to your Skill Exchanger account."}
           </p>
 
           {/* Error */}
@@ -219,6 +252,31 @@ function Login() {
 
           {/* Form */}
 
+          {forgotMode ? (
+            <form onSubmit={handlePasswordReset} className="mt-8 space-y-5">
+              {resetSent ? (
+                <div className="rounded-lg border border-[#99f6e4] bg-[#f0fdfa] p-4 text-sm text-[#0f766e]">
+                  Check your email for a password reset link.
+                </div>
+              ) : (
+                <div>
+                  <label htmlFor="reset-email" className="mb-2 block text-sm font-medium text-gray-700">Email Address</label>
+                  <input
+                    id="reset-email"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(event) => setResetEmail(event.target.value)}
+                    placeholder="Enter your email"
+                    autoComplete="email"
+                    disabled={loading}
+                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]"
+                  />
+                </div>
+              )}
+              {!resetSent && <button type="submit" disabled={loading} className="w-full rounded-lg bg-amber-500 py-3 font-semibold text-white hover:bg-amber-600 disabled:opacity-50">{loading ? "Sending..." : "Send reset link"}</button>}
+              <button type="button" onClick={() => { setForgotMode(false); setResetSent(false); setError(""); }} className="w-full text-sm font-semibold text-[#0f766e]">Back to login</button>
+            </form>
+          ) : (
           <form
             onSubmit={handleLogin}
             className="mt-8 space-y-5"
@@ -274,9 +332,7 @@ function Login() {
                 <button
                   type="button"
                   className="text-sm text-amber-600 hover:text-amber-700 cursor-pointer"
-                  onClick={() => {
-                    // Forgot password will be implemented later
-                  }}
+                  onClick={() => { setForgotMode(true); setResetEmail(formData.email); setError(""); }}
                 >
                   Forgot password?
                 </button>
@@ -368,6 +424,7 @@ function Login() {
             </button>
 
           </form>
+          )}
 
           {/* Divider */}
 

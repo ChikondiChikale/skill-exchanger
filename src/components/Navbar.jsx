@@ -35,26 +35,26 @@ function Navbar() {
         {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-8">
 
-          <Link
-            to="/#discover"
+          <a
+            href="/#discover"
             className="text-gray-200 hover:text-amber-400 transition duration-200"
           >
             Discover
-          </Link>
+          </a>
 
-          <Link
-            to="/#how-it-works"
+          <a
+            href="/#how-it-works"
             className="text-gray-200 hover:text-amber-400 transition duration-200"
           >
             How It Works
-          </Link>
+          </a>
 
-          <Link
-            to="/#about"
+          <a
+            href="/#about"
             className="text-gray-200 hover:text-amber-400 transition duration-200"
           >
             About
-          </Link>
+          </a>
 
         </div>
 
@@ -99,29 +99,29 @@ function Navbar() {
 
           <div className="px-6 py-5 flex flex-col gap-2">
 
-            <Link
-              to="/#discover"
+            <a
+              href="/#discover"
               onClick={closeMenu}
               className="px-4 py-3 rounded-lg text-gray-200 hover:bg-white/10 hover:text-amber-400 transition"
             >
               Discover
-            </Link>
+            </a>
 
-            <Link
-              to="/#how-it-works"
+            <a
+              href="/#how-it-works"
               onClick={closeMenu}
               className="px-4 py-3 rounded-lg text-gray-200 hover:bg-white/10 hover:text-amber-400 transition"
             >
               How It Works
-            </Link>
+            </a>
 
-            <Link
-              to="/#about"
+            <a
+              href="/#about"
               onClick={closeMenu}
               className="px-4 py-3 rounded-lg text-gray-200 hover:bg-white/10 hover:text-amber-400 transition"
             >
               About
-            </Link>
+            </a>
 
             <div className="border-t border-white/10 my-2"></div>
 

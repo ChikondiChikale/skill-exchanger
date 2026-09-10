@@ -1,9 +1,12 @@
+import { Link } from 'react-router-dom'
+
 const links = [
-  { name: 'Overview', href: '#', active: true },
-  { name: 'Skills', href: '#' },
-  { name: 'Matches', href: '#' },
-  { name: 'Messages', href: '#' },
-  { name: 'Settings', href: '#' },
+  { name: 'Overview', href: '/dashboard', active: true },
+  { name: 'Discover', href: '/discover' },
+  { name: 'Skills', href: '/skills' },
+  { name: 'Messages', href: '/messages' },
+  { name: 'Exchange Requests', href: '/exchange-requests' },
+  { name: 'Settings', href: '/settings' },
 ]
 
 function Sidebar() {
@@ -16,9 +19,9 @@ function Sidebar() {
 
       <nav className="space-y-2">
         {links.map((link) => (
-          <a
+          <Link
             key={link.name}
-            href={link.href}
+            to={link.href}
             className={`block rounded-lg px-3 py-2 text-sm font-medium transition ${
               link.active
                 ? 'bg-amber-500 text-white'
@@ -26,7 +29,7 @@ function Sidebar() {
             }`}
           >
             {link.name}
-          </a>
+          </Link>
         ))}
       </nav>
     </aside>

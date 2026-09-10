@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -9,15 +10,18 @@ import {
   faGear,
   faRightFromBracket,
   faMagnifyingGlass,
-  faSliders,
   faLocationDot,
   faHandshake,
   faBars,
   faXmark,
-  faArrowRight,
+  faPaperPlane,
+  faCheck,
+  faChevronDown,
+  faUser,
 } from "@fortawesome/free-solid-svg-icons";
 
 import { supabase } from "../lib/supabase";
+import NotificationBell from "../components/NotificationBell";
 
 function getInitials(name = "") {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -65,22 +69,56 @@ function Discover() {
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
 
   const [selectedUser, setSelectedUser] = useState(null);
 
+  /*
+   * ------------------------------------------------------------
+   * EXCHANGE REQUEST MODAL
+   * ------------------------------------------------------------
+   */
+
+  const [requestUser, setRequestUser] = useState(null);
+  const [selectedSkillId, setSelectedSkillId] = useState("");
+  const [requestMessage, setRequestMessage] = useState("");
+
+  /*
+   * ------------------------------------------------------------
+   * DATA
+   * ------------------------------------------------------------
+   */
+
   const [users, setUsers] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(null);
 
+  /*
+   * IDs of people to whom the current user already has
+   * a pending exchange request.
+   */
+
+  const [pendingRequestUserIds, setPendingRequestUserIds] =
+    useState(new Set());
+
+  /*
+   * ------------------------------------------------------------
+   * LOADING / ERRORS
+   * ------------------------------------------------------------
+   */
+
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [requestLoading, setRequestLoading] = useState(false);
 
   const [error, setError] = useState("");
+  const [requestError, setRequestError] = useState("");
+  const [requestSuccess, setRequestSuccess] = useState("");
 
   /*
    * ============================================================
-   * LOAD CURRENT USER + DISCOVER USERS + SKILLS
+   * LOAD CURRENT USER + DISCOVER USERS + SKILLS + REQUESTS
    * ============================================================
    */
 
@@ -92,6 +130,12 @@ function Discover() {
       setError("");
 
       try {
+        /*
+         * --------------------------------------------------------
+         * Current authenticated user
+         * --------------------------------------------------------
+         */
+
         const {
           data: { user },
           error: authError,
@@ -102,13 +146,16 @@ function Discover() {
         }
 
         if (!user) {
-          navigate("/login", { replace: true });
+          navigate("/login", {
+            replace: true,
+            state: { from: "/discover" },
+          });
           return;
         }
 
         /*
          * --------------------------------------------------------
-         * Load current user's profile
+         * Current user's profile
          * --------------------------------------------------------
          */
 
@@ -129,7 +176,7 @@ function Discover() {
 
         /*
          * --------------------------------------------------------
-         * Load all profiles
+         * Load all other profiles
          * --------------------------------------------------------
          */
 
@@ -169,6 +216,37 @@ function Discover() {
 
         /*
          * --------------------------------------------------------
+         * Load current user's pending exchange requests
+         * --------------------------------------------------------
+         */
+
+        const {
+          data: pendingRequests,
+          error: pendingRequestsError,
+        } = await supabase
+          .from("exchange_requests")
+          .select("id, receiver_id, status")
+          .eq("sender_id", user.id)
+          .eq("status", "pending");
+
+        if (pendingRequestsError) {
+          throw pendingRequestsError;
+        }
+
+        /*
+         * --------------------------------------------------------
+         * Convert pending receiver IDs into a Set
+         * --------------------------------------------------------
+         */
+
+        const pendingIds = new Set(
+          (pendingRequests || []).map(
+            (request) => request.receiver_id
+          )
+        );
+
+        /*
+         * --------------------------------------------------------
          * Combine profiles + skills
          * --------------------------------------------------------
          */
@@ -180,17 +258,27 @@ function Discover() {
 
           const teaches = userSkills
             .filter(
-              (skill) => normalizeSkillType(skill.skill_type) === "teach"
+              (skill) =>
+                normalizeSkillType(skill.skill_type) === "teach"
             )
-            .map((skill) => skill.skill_name)
-            .filter(Boolean);
+            .map((skill) => ({
+              id: skill.id,
+              name: skill.skill_name,
+              description: skill.description || "",
+            }))
+            .filter((skill) => skill.name);
 
           const learns = userSkills
             .filter(
-              (skill) => normalizeSkillType(skill.skill_type) === "learn"
+              (skill) =>
+                normalizeSkillType(skill.skill_type) === "learn"
             )
-            .map((skill) => skill.skill_name)
-            .filter(Boolean);
+            .map((skill) => ({
+              id: skill.id,
+              name: skill.skill_name,
+              description: skill.description || "",
+            }))
+            .filter((skill) => skill.name);
 
           const locationParts = [
             profile.city,
@@ -199,24 +287,41 @@ function Discover() {
 
           return {
             id: profile.id,
-            name: profile.full_name || profile.username || "Skill Member",
+
+            name:
+              profile.full_name ||
+              profile.username ||
+              "Skill Member",
+
             username: profile.username || "",
+
             initials: getInitials(
-              profile.full_name || profile.username || "User"
+              profile.full_name ||
+                profile.username ||
+                "User"
             ),
+
             location:
               locationParts.length > 0
                 ? locationParts.join(", ")
                 : "Location not specified",
+
             city: profile.city || "",
             country: profile.country || "",
-            occupation: profile.occupation || "Skill Member",
+
+            occupation:
+              profile.occupation || "Skill Member",
+
             bio:
               profile.bio ||
               "This member has not added a bio yet.",
+
             avatarUrl: profile.avatar_url || "",
+
             teaches,
             learns,
+
+            hasPendingRequest: pendingIds.has(profile.id),
           };
         });
 
@@ -224,6 +329,7 @@ function Discover() {
 
         setCurrentProfile(myProfile || null);
         setUsers(formattedUsers);
+        setPendingRequestUserIds(pendingIds);
       } catch (err) {
         console.error("Discover loading error:", err);
 
@@ -265,8 +371,8 @@ function Discover() {
         user.country,
         user.occupation,
         user.bio,
-        ...user.teaches,
-        ...user.learns,
+        ...user.teaches.map((skill) => skill.name),
+        ...user.learns.map((skill) => skill.name),
       ]
         .join(" ")
         .toLowerCase();
@@ -348,7 +454,252 @@ function Discover() {
 
   /*
    * ============================================================
-   * CLOSE MOBILE SIDEBAR WHEN NAVIGATING
+   * OPEN REQUEST MODAL
+   * ============================================================
+   */
+
+  const openRequestModal = (user) => {
+    if (!user?.id) return;
+
+    setRequestUser(user);
+    setRequestMessage("");
+    setRequestError("");
+    setRequestSuccess("");
+
+    /*
+     * Automatically select the first skill they can teach.
+     */
+
+    if (user.teaches?.length > 0) {
+      setSelectedSkillId(user.teaches[0].id);
+    } else {
+      setSelectedSkillId("");
+    }
+
+    /*
+     * Close profile modal if it is open.
+     */
+
+    setSelectedUser(null);
+  };
+
+  /*
+   * ============================================================
+   * CLOSE REQUEST MODAL
+   * ============================================================
+   */
+
+  const closeRequestModal = () => {
+    if (requestLoading) return;
+
+    setRequestUser(null);
+    setSelectedSkillId("");
+    setRequestMessage("");
+    setRequestError("");
+    setRequestSuccess("");
+  };
+
+  /*
+   * ============================================================
+   * SEND REAL EXCHANGE REQUEST + CREATE NOTIFICATION
+   * ============================================================
+   */
+
+  const handleSendExchangeRequest = async () => {
+    if (!requestUser?.id || requestLoading) return;
+
+    if (!currentProfile?.id) {
+      setRequestError(
+        "Your profile could not be loaded. Please refresh the page."
+      );
+      return;
+    }
+
+    setRequestLoading(true);
+    setRequestError("");
+    setRequestSuccess("");
+
+    try {
+      /*
+       * --------------------------------------------------------
+       * Make sure the user does not already have a pending
+       * request to this person.
+       * --------------------------------------------------------
+       */
+
+      const {
+        data: existingRequest,
+        error: existingRequestError,
+      } = await supabase
+        .from("exchange_requests")
+        .select("id, status")
+        .eq("sender_id", currentProfile.id)
+        .eq("receiver_id", requestUser.id)
+        .eq("status", "pending")
+        .maybeSingle();
+
+      if (existingRequestError) {
+        throw existingRequestError;
+      }
+
+      if (existingRequest) {
+        setPendingRequestUserIds((previous) => {
+          const updated = new Set(previous);
+          updated.add(requestUser.id);
+          return updated;
+        });
+
+        setUsers((previousUsers) =>
+          previousUsers.map((user) =>
+            user.id === requestUser.id
+              ? {
+                  ...user,
+                  hasPendingRequest: true,
+                }
+              : user
+          )
+        );
+
+        setRequestError(
+          "You already have a pending exchange request with this person."
+        );
+
+        return;
+      }
+
+      /*
+       * --------------------------------------------------------
+       * Find selected teaching skill
+       * --------------------------------------------------------
+       */
+
+      const selectedSkill = requestUser.teaches?.find(
+        (skill) => skill.id === selectedSkillId
+      );
+
+      const skillName =
+        selectedSkill?.name || "a skill";
+
+      /*
+       * --------------------------------------------------------
+       * Insert exchange request
+       * --------------------------------------------------------
+       */
+
+      const {
+        data: createdRequest,
+        error: insertError,
+      } = await supabase
+        .from("exchange_requests")
+        .insert({
+          sender_id: currentProfile.id,
+          receiver_id: requestUser.id,
+          skill_id: selectedSkillId || null,
+          message: requestMessage.trim() || null,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      /*
+       * --------------------------------------------------------
+       * Create notification for receiver
+       * --------------------------------------------------------
+       */
+
+      const {
+        error: notificationError,
+      } = await supabase
+        .from("notifications")
+        .insert({
+          user_id: requestUser.id,
+          sender_id: currentProfile.id,
+          type: "exchange_request",
+          title: "New Skill Exchange Request",
+          message: `${
+            currentProfile.full_name || "Someone"
+          } wants to learn ${skillName} from you.`,
+          related_request_id:
+            createdRequest?.id || null,
+          is_read: false,
+        });
+
+      /*
+       * --------------------------------------------------------
+       * Notification errors should not make the request fail.
+       * The exchange request has already been created.
+       * --------------------------------------------------------
+       */
+
+      if (notificationError) {
+        console.error(
+          "Notification creation error:",
+          notificationError
+        );
+      }
+
+      /*
+       * --------------------------------------------------------
+       * Update local pending state
+       * --------------------------------------------------------
+       */
+
+      setPendingRequestUserIds((previous) => {
+        const updated = new Set(previous);
+        updated.add(requestUser.id);
+        return updated;
+      });
+
+      setUsers((previousUsers) =>
+        previousUsers.map((user) =>
+          user.id === requestUser.id
+            ? {
+                ...user,
+                hasPendingRequest: true,
+              }
+            : user
+        )
+      );
+
+      setRequestSuccess(
+        "Your skill exchange request has been sent successfully."
+      );
+
+      /*
+       * --------------------------------------------------------
+       * Close modal after short delay
+       * --------------------------------------------------------
+       */
+
+      setTimeout(() => {
+        setRequestUser(null);
+        setSelectedSkillId("");
+        setRequestMessage("");
+        setRequestError("");
+        setRequestSuccess("");
+      }, 1200);
+    } catch (err) {
+      console.error(
+        "Exchange request error:",
+        err
+      );
+
+      setRequestError(
+        err?.message ||
+          "Unable to send the exchange request. Please try again."
+      );
+    } finally {
+      setRequestLoading(false);
+    }
+  };
+
+  /*
+   * ============================================================
+   * CLOSE MOBILE SIDEBAR
    * ============================================================
    */
 
@@ -356,8 +707,14 @@ function Discover() {
     setSidebarOpen(false);
   };
 
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
+
   return (
-    <div className="min-h-screen bg-[#fffdf2] text-[#062f2f]">
+    <div className="app-shell min-h-screen bg-[#fffdf2] text-[#062f2f]">
 
       {/* ========================================================
           MOBILE OVERLAY
@@ -375,7 +732,7 @@ function Discover() {
       ======================================================== */}
 
       <aside
-        className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
+        className={`fixed left-0 top-0 z-50 h-screen w-[260px] bg-[#062f2f] text-white flex flex-col transform transition-transform duration-300 lg:translate-x-0 ${
           sidebarOpen
             ? "translate-x-0"
             : "-translate-x-full"
@@ -422,11 +779,7 @@ function Discover() {
 
         {/* NAVIGATION */}
 
-        <nav className="flex-1 px-4 py-7 overflow-y-auto">
-
-          <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-            Menu
-          </p>
+        <nav className="px-4 space-y-2 flex-1 min-h-0 overflow-hidden">
 
           <div className="space-y-1.5">
 
@@ -451,7 +804,7 @@ function Discover() {
             <Link
               to="/discover"
               onClick={closeSidebar}
-              className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[#f59e0b] text-white font-semibold shadow-lg cursor-pointer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f59e0b] text-[#062f2f] font-semibold transition cursor-pointer"
             >
 
               <span className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
@@ -504,13 +857,21 @@ function Discover() {
 
           </div>
 
-          {/* MORE */}
+          <div className="space-y-2">
 
-          <div className="mt-10">
+            <Link
+              to="/exchange-requests"
+              onClick={closeSidebar}
+              className="group flex items-center gap-3 px-3.5 py-3 rounded-xl text-white/65 hover:bg-white/10 hover:text-white transition cursor-pointer"
+            >
 
-            <p className="px-3 mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
-              More
-            </p>
+              <span className="w-8 h-8 rounded-lg flex items-center justify-center group-hover:bg-white/10">
+                <FontAwesomeIcon icon={faHandshake} />
+              </span>
+
+              <span>Exchange Requests</span>
+
+            </Link>
 
             <Link
               to="/settings"
@@ -557,13 +918,11 @@ function Discover() {
 
       <div className="lg:ml-[260px]">
 
-        {/* ======================================================
-            HEADER
-        ====================================================== */}
+        {/* HEADER */}
 
         <header className="h-[78px] bg-white border-b border-[#d9e7df] px-5 sm:px-8 flex items-center justify-between">
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1">
 
             {/* MOBILE MENU BUTTON */}
 
@@ -575,47 +934,68 @@ function Discover() {
               <FontAwesomeIcon icon={faBars} />
             </button>
 
-            <div>
-
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[#0f766e]">
-                Community
-              </p>
-
-              <h1 className="text-lg font-bold">
-                Discover
-              </h1>
-
-            </div>
-
           </div>
 
           {/* CURRENT USER */}
 
           <div className="flex items-center gap-3">
 
-            {currentProfile?.avatar_url ? (
-              <img
-                src={currentProfile.avatar_url}
-                alt={currentProfile.full_name || "Profile"}
-                className="w-10 h-10 rounded-full object-cover border border-[#d9e7df]"
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold">
-                {getInitials(
-                  currentProfile?.full_name || "Chikondi"
+            <NotificationBell />
+
+            <div className="relative">
+
+              <button
+                onClick={() => setProfileMenuOpen((previous) => !previous)}
+                aria-label="Open profile menu"
+                className="flex items-center gap-2 sm:gap-3 cursor-pointer"
+              >
+                {currentProfile?.avatar_url ? (
+                  <img
+                    src={currentProfile.avatar_url}
+                    alt={currentProfile.full_name || "Profile"}
+                    className="w-10 h-10 rounded-full object-cover border border-[#d9e7df]"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#fef3c7] text-[#b45309] flex items-center justify-center font-bold">
+                    {getInitials(currentProfile?.full_name || "User")}
+                  </div>
                 )}
-              </div>
-            )}
 
-            <div className="hidden sm:block">
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm font-semibold text-[#062f2f]">
+                    {currentProfile?.full_name || "User"}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {currentProfile?.occupation || "Member"}
+                  </p>
+                </div>
 
-              <p className="text-sm font-bold">
-                {currentProfile?.full_name || "Chikondi"}
-              </p>
+                <FontAwesomeIcon icon={faChevronDown} className="text-xs text-gray-400" />
+              </button>
 
-              <p className="text-[11px] text-gray-400">
-                {currentProfile?.occupation || "Member"}
-              </p>
+              {profileMenuOpen && (
+                <div className="absolute right-0 top-14 w-48 bg-white border border-gray-200 rounded-xl shadow-lg py-2 z-30">
+                  <Link
+                    to="/settings"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faUser} />
+                    Profile & Settings
+                  </Link>
+
+                  <button
+                    onClick={() => {
+                      setProfileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 cursor-pointer"
+                  >
+                    <FontAwesomeIcon icon={faRightFromBracket} />
+                    Logout
+                  </button>
+                </div>
+              )}
 
             </div>
 
@@ -623,38 +1003,23 @@ function Discover() {
 
         </header>
 
-        {/* ======================================================
-            CONTENT
-        ====================================================== */}
+        {/* CONTENT */}
 
-        <main className="max-w-[1400px] mx-auto px-5 sm:px-8 xl:px-10 py-8">
+        <main className="discover-content max-w-[1400px] mx-auto px-5 sm:px-8 xl:px-10 py-8">
 
           {/* INTRO */}
 
-          <section className="mb-8">
-
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#ccfbf1] text-[#0f766e] text-xs font-bold mb-4">
-
-              <FontAwesomeIcon icon={faCompass} />
-
-              Skill community
-
-            </div>
-
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Discover People
+          <section className="discover-intro mb-5">
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Discover Amazing People
             </h2>
-
-            <p className="mt-2 text-gray-500 max-w-2xl">
-              Find people who can teach you something new
-              and discover opportunities to share what you know.
+            <p className="mt-1 text-sm text-gray-500 max-w-2xl">
+              Find people to exchange skills with.
             </p>
 
           </section>
 
-          {/* ====================================================
-              ERROR
-          ==================================================== */}
+          {/* ERROR */}
 
           {error && (
             <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-5 py-4 flex items-start gap-3">
@@ -682,13 +1047,11 @@ function Discover() {
             </div>
           )}
 
-          {/* ====================================================
-              SEARCH
-          ==================================================== */}
+          {/* SEARCH */}
 
-          <section className="bg-white border border-[#d9e7df] rounded-[24px] p-5 sm:p-6 mb-7 shadow-sm">
+          <section className="discover-toolbar bg-white border border-[#d9e7df] rounded-[24px] p-3 mb-5 shadow-sm">
 
-            <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex flex-col lg:flex-row gap-2">
 
               <div className="relative flex-1">
 
@@ -700,9 +1063,11 @@ function Discover() {
                 <input
                   type="text"
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) =>
+                    setSearch(e.target.value)
+                  }
                   placeholder="Search by name, skill or location..."
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-[#d9e7df] outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10 transition"
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-[#d9e7df] outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10 transition"
                 />
 
               </div>
@@ -711,7 +1076,7 @@ function Discover() {
 
                 <button
                   onClick={() => setFilter("all")}
-                  className={`px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition whitespace-nowrap ${
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition whitespace-nowrap ${
                     filter === "all"
                       ? "bg-[#062f2f] text-white"
                       : "bg-[#f5f7f5] text-gray-600 hover:bg-[#e9f2ed]"
@@ -722,7 +1087,7 @@ function Discover() {
 
                 <button
                   onClick={() => setFilter("teach")}
-                  className={`px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition whitespace-nowrap ${
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition whitespace-nowrap ${
                     filter === "teach"
                       ? "bg-[#f59e0b] text-white"
                       : "bg-[#f5f7f5] text-gray-600 hover:bg-[#e9f2ed]"
@@ -733,7 +1098,7 @@ function Discover() {
 
                 <button
                   onClick={() => setFilter("learn")}
-                  className={`px-4 py-3 rounded-xl text-sm font-bold cursor-pointer transition whitespace-nowrap ${
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition whitespace-nowrap ${
                     filter === "learn"
                       ? "bg-[#0f766e] text-white"
                       : "bg-[#f5f7f5] text-gray-600 hover:bg-[#e9f2ed]"
@@ -748,9 +1113,7 @@ function Discover() {
 
           </section>
 
-          {/* ====================================================
-              RESULTS HEADER
-          ==================================================== */}
+          {/* RESULTS HEADER */}
 
           <div className="flex items-center justify-between mb-5">
 
@@ -772,21 +1135,9 @@ function Discover() {
 
             </div>
 
-            <button
-              className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#d9e7df] text-sm font-bold text-[#062f2f] hover:border-[#0f766e] hover:text-[#0f766e] cursor-pointer transition"
-            >
-
-              <FontAwesomeIcon icon={faSliders} />
-
-              Filters
-
-            </button>
-
           </div>
 
-          {/* ====================================================
-              LOADING
-          ==================================================== */}
+          {/* LOADING */}
 
           {loading ? (
 
@@ -820,6 +1171,7 @@ function Discover() {
                   <div className="flex gap-2 mt-6">
 
                     <div className="h-8 bg-gray-100 rounded-lg w-20" />
+
                     <div className="h-8 bg-gray-100 rounded-lg w-16" />
 
                   </div>
@@ -832,202 +1184,232 @@ function Discover() {
 
           ) : filteredUsers.length > 0 ? (
 
-            /* ==================================================
-               USER GRID
-            ================================================== */
+            /* USER GRID */
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
 
-              {filteredUsers.map((user) => (
+              {filteredUsers.map((user) => {
 
-                <article
-                  key={user.id}
-                  className="bg-white border border-[#d9e7df] rounded-[24px] p-6 hover:-translate-y-1 hover:shadow-lg transition duration-200"
-                >
+                const isPending =
+                  pendingRequestUserIds.has(user.id);
 
-                  {/* USER */}
+                return (
+                  <article
+                    key={user.id}
+                    className="discover-card bg-white border border-[#d9e7df] rounded-[18px] p-4 hover:-translate-y-1 hover:shadow-lg transition duration-200"
+                  >
 
-                  <div className="flex items-start justify-between gap-3">
+                    {/* USER */}
 
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
 
-                      {user.avatarUrl ? (
-                        <img
-                          src={user.avatarUrl}
-                          alt={user.name}
-                          className="w-12 h-12 rounded-2xl object-cover border border-[#d9e7df] flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-2xl bg-[#ccfbf1] text-[#0f766e] flex items-center justify-center font-extrabold flex-shrink-0">
-                          {user.initials}
-                        </div>
-                      )}
+                      <div className="flex items-center gap-3 min-w-0">
 
-                      <div className="min-w-0">
-
-                        <h4 className="font-extrabold truncate">
-                          {user.name}
-                        </h4>
-
-                        <p className="text-xs text-gray-400 flex items-center gap-1 mt-1 truncate">
-
-                          <FontAwesomeIcon
-                            icon={faLocationDot}
+                        {user.avatarUrl ? (
+                          <img
+                            src={user.avatarUrl}
+                            alt={user.name}
+                            className="w-11 h-11 rounded-full object-cover border border-[#d9e7df] flex-shrink-0"
                           />
+                        ) : (
+                          <div className="w-11 h-11 rounded-full bg-[#ccfbf1] text-[#0f766e] flex items-center justify-center font-extrabold flex-shrink-0">
+                            {user.initials}
+                          </div>
+                        )}
 
-                          <span className="truncate">
-                            {user.location}
-                          </span>
+                        <div className="min-w-0">
 
-                        </p>
+                          <h4 className="font-extrabold truncate">
+                            {user.name}
+                          </h4>
+
+                          <p className="text-xs text-gray-400 flex items-center gap-1 mt-1 truncate">
+
+                            <FontAwesomeIcon
+                              icon={faLocationDot}
+                            />
+
+                            <span className="truncate">
+                              {user.location}
+                            </span>
+
+                          </p>
+
+                        </div>
 
                       </div>
+
+                      <FontAwesomeIcon icon={faHandshake} className="text-[#f59e0b] text-xs" />
 
                     </div>
 
-                    <span className="px-2.5 py-1 rounded-full bg-[#f0fdfa] text-[#0f766e] text-[10px] font-bold flex-shrink-0">
-                      Member
-                    </span>
+                    {/* OCCUPATION */}
 
-                  </div>
-
-                  {/* OCCUPATION */}
-
-                  <p className="text-xs font-semibold text-[#0f766e] mt-4">
-                    {user.occupation}
-                  </p>
-
-                  {/* BIO */}
-
-                  <p className="text-sm text-gray-500 leading-relaxed mt-2 min-h-[62px]">
-                    {user.bio}
-                  </p>
-
-                  {/* TEACH */}
-
-                  <div className="mt-5">
-
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-2">
-                      Can teach
+                    <p className="text-[11px] font-semibold text-[#0f766e] mt-3">
+                      {user.occupation}
                     </p>
 
-                    {user.teaches.length > 0 ? (
+                    {/* BIO */}
 
-                      <div className="flex flex-wrap gap-1.5">
-
-                        {user.teaches
-                          .slice(0, 3)
-                          .map((skill) => (
-
-                            <span
-                              key={skill}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#fff7df] border border-[#fde68a] text-[#92400e] text-xs font-semibold"
-                            >
-                              {skill}
-                            </span>
-
-                          ))}
-
-                        {user.teaches.length > 3 && (
-
-                          <span className="px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-500 text-xs font-semibold">
-                            +{user.teaches.length - 3}
-                          </span>
-
-                        )}
-
-                      </div>
-
-                    ) : (
-
-                      <p className="text-xs text-gray-400">
-                        No teaching skills added yet.
-                      </p>
-
-                    )}
-
-                  </div>
-
-                  {/* LEARN */}
-
-                  <div className="mt-4">
-
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400 mb-2">
-                      Wants to learn
+                    <p className="text-xs text-gray-500 leading-relaxed mt-1 min-h-[38px] line-clamp-2">
+                      {user.bio}
                     </p>
 
-                    {user.learns.length > 0 ? (
+                    {/* TEACH */}
 
-                      <div className="flex flex-wrap gap-1.5">
+                    <div className="mt-5">
 
-                        {user.learns
-                          .slice(0, 2)
-                          .map((skill) => (
-
-                            <span
-                              key={skill}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#f0fdfa] border border-[#99f6e4] text-[#0f766e] text-xs font-semibold"
-                            >
-                              {skill}
-                            </span>
-
-                          ))}
-
-                        {user.learns.length > 2 && (
-
-                          <span className="px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-500 text-xs font-semibold">
-                            +{user.learns.length - 2}
-                          </span>
-
-                        )}
-
-                      </div>
-
-                    ) : (
-
-                      <p className="text-xs text-gray-400">
-                        No learning skills added yet.
+                      <p className="text-[9px] uppercase tracking-wider font-bold text-gray-400 mb-1.5">
+                        Teaches
                       </p>
 
+                      {user.teaches.length > 0 ? (
+
+                        <div className="flex flex-wrap gap-1.5">
+
+                          {user.teaches
+                            .slice(0, 3)
+                            .map((skill) => (
+
+                              <span
+                                key={skill.id}
+                                className="px-2 py-1 rounded-full bg-[#eaf7f2] border border-[#c9e9dc] text-[#0f766e] text-[10px] font-semibold"
+                              >
+                                {skill.name}
+                              </span>
+
+                            ))}
+
+                          {user.teaches.length > 3 && (
+
+                            <span className="px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-500 text-xs font-semibold">
+                              +{user.teaches.length - 3}
+                            </span>
+
+                          )}
+
+                        </div>
+
+                      ) : (
+
+                        <p className="text-xs text-gray-400">
+                          No teaching skills added yet.
+                        </p>
+
+                      )}
+
+                    </div>
+
+                    {/* LEARN */}
+
+                    <div className="mt-4">
+
+                      <p className="text-[9px] uppercase tracking-wider font-bold text-gray-400 mb-1.5">
+                        Wants to learn
+                      </p>
+
+                      {user.learns.length > 0 ? (
+
+                        <div className="flex flex-wrap gap-1.5">
+
+                          {user.learns
+                            .slice(0, 2)
+                            .map((skill) => (
+
+                              <span
+                                key={skill.id}
+                                className="px-2 py-1 rounded-full bg-[#fff7df] border border-[#fde68a] text-[#92400e] text-[10px] font-semibold"
+                              >
+                                {skill.name}
+                              </span>
+
+                            ))}
+
+                          {user.learns.length > 2 && (
+
+                            <span className="px-2.5 py-1.5 rounded-lg bg-gray-50 text-gray-500 text-xs font-semibold">
+                              +{user.learns.length - 2}
+                            </span>
+
+                          )}
+
+                        </div>
+
+                      ) : (
+
+                        <p className="text-xs text-gray-400">
+                          No learning skills added yet.
+                        </p>
+
+                      )}
+
+                    </div>
+
+                    {/* ACTIONS */}
+
+                    <div className="flex gap-2 mt-4">
+
+                      <button
+                        onClick={() =>
+                          setSelectedUser(user)
+                        }
+                        className="flex-1 py-2 rounded-lg bg-[#087878] text-white text-[11px] font-bold hover:bg-[#065e5e] cursor-pointer transition"
+                      >
+                        View Profile
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (!isPending) {
+                            openRequestModal(user);
+                          }
+                        }}
+                        disabled={isPending}
+                        className={`w-11 rounded-xl text-white transition ${
+                          isPending
+                            ? "bg-[#0f766e] cursor-not-allowed"
+                            : "bg-[#f59e0b] hover:bg-[#d97706] cursor-pointer"
+                        }`}
+                        title={
+                          isPending
+                            ? "Exchange request pending"
+                            : "Request skill exchange"
+                        }
+                      >
+
+                        <FontAwesomeIcon
+                          icon={
+                            isPending
+                              ? faCheck
+                              : faHandshake
+                          }
+                        />
+
+                      </button>
+
+                    </div>
+
+                    {/* PENDING LABEL */}
+
+                    {isPending && (
+                      <div className="mt-3 flex items-center justify-center gap-2 text-xs font-bold text-[#0f766e] bg-[#f0fdfa] border border-[#ccfbf1] rounded-xl py-2">
+
+                        <FontAwesomeIcon icon={faCheck} />
+
+                        Exchange request pending
+
+                      </div>
                     )}
 
-                  </div>
-
-                  {/* ACTIONS */}
-
-                  <div className="flex gap-2 mt-6">
-
-                    <button
-                      onClick={() => setSelectedUser(user)}
-                      className="flex-1 py-2.5 rounded-xl border border-[#d9e7df] text-[#062f2f] text-sm font-bold hover:border-[#0f766e] hover:text-[#0f766e] cursor-pointer transition"
-                    >
-                      View Profile
-                    </button>
-
-                    <button
-                      onClick={() => handleStartConversation(user)}
-                      disabled={actionLoading}
-                      className="w-11 rounded-xl bg-[#f59e0b] text-white hover:bg-[#d97706] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition"
-                      title="Start conversation"
-                    >
-
-                      <FontAwesomeIcon icon={faHandshake} />
-
-                    </button>
-
-                  </div>
-
-                </article>
-
-              ))}
+                  </article>
+                );
+              })}
 
             </div>
 
           ) : (
 
-            /* ==================================================
-               EMPTY STATE
-            ================================================== */
+            /* EMPTY STATE */
 
             <div className="bg-white border border-[#d9e7df] rounded-[24px] p-12 text-center">
 
@@ -1125,7 +1507,9 @@ function Discover() {
                 </div>
 
                 <button
-                  onClick={() => setSelectedUser(null)}
+                  onClick={() =>
+                    setSelectedUser(null)
+                  }
                   className="w-9 h-9 rounded-lg hover:bg-white/10 cursor-pointer flex-shrink-0"
                   aria-label="Close profile"
                 >
@@ -1160,16 +1544,18 @@ function Discover() {
 
                   <div className="flex flex-wrap gap-2">
 
-                    {selectedUser.teaches.map((skill) => (
+                    {selectedUser.teaches.map(
+                      (skill) => (
 
-                      <span
-                        key={skill}
-                        className="px-3 py-2 rounded-xl bg-[#fff7df] border border-[#fde68a] text-[#92400e] text-sm font-semibold"
-                      >
-                        {skill}
-                      </span>
+                        <span
+                          key={skill.id}
+                          className="px-3 py-2 rounded-xl bg-[#fff7df] border border-[#fde68a] text-[#92400e] text-sm font-semibold"
+                        >
+                          {skill.name}
+                        </span>
 
-                    ))}
+                      )
+                    )}
 
                   </div>
 
@@ -1195,16 +1581,18 @@ function Discover() {
 
                   <div className="flex flex-wrap gap-2">
 
-                    {selectedUser.learns.map((skill) => (
+                    {selectedUser.learns.map(
+                      (skill) => (
 
-                      <span
-                        key={skill}
-                        className="px-3 py-2 rounded-xl bg-[#f0fdfa] border border-[#99f6e4] text-[#0f766e] text-sm font-semibold"
-                      >
-                        {skill}
-                      </span>
+                        <span
+                          key={skill.id}
+                          className="px-3 py-2 rounded-xl bg-[#f0fdfa] border border-[#99f6e4] text-[#0f766e] text-sm font-semibold"
+                        >
+                          {skill.name}
+                        </span>
 
-                    ))}
+                      )
+                    )}
 
                   </div>
 
@@ -1218,35 +1606,54 @@ function Discover() {
 
               </div>
 
-              {/* ACTION */}
+              {/* REQUEST BUTTON */}
 
-              <button
-                onClick={() =>
-                  handleStartConversation(selectedUser)
-                }
-                disabled={actionLoading}
-                className="w-full mt-7 py-3.5 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition flex items-center justify-center"
-              >
+              {pendingRequestUserIds.has(
+                selectedUser.id
+              ) ? (
 
-                <FontAwesomeIcon
-                  icon={faHandshake}
-                  className="mr-2"
-                />
+                <div className="w-full mt-7 py-3.5 rounded-xl bg-[#f0fdfa] border border-[#99f6e4] text-[#0f766e] font-bold flex items-center justify-center">
 
-                {actionLoading
-                  ? "Opening conversation..."
-                  : "Request Skill Exchange"}
+                  <FontAwesomeIcon
+                    icon={faCheck}
+                    className="mr-2"
+                  />
 
-              </button>
+                  Exchange Request Pending
 
-              {/* VIEW MESSAGES */}
+                </div>
+
+              ) : (
+
+                <button
+                  onClick={() =>
+                    openRequestModal(selectedUser)
+                  }
+                  className="w-full mt-7 py-3.5 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] cursor-pointer transition flex items-center justify-center"
+                >
+
+                  <FontAwesomeIcon
+                    icon={faHandshake}
+                    className="mr-2"
+                  />
+
+                  Request Skill Exchange
+
+                </button>
+
+              )}
+
+              {/* MESSAGE */}
 
               <button
                 onClick={() => {
                   setSelectedUser(null);
-                  navigate("/messages");
+                  handleStartConversation(
+                    selectedUser
+                  );
                 }}
-                className="w-full mt-3 py-3 rounded-xl border border-[#d9e7df] text-[#062f2f] font-bold hover:border-[#0f766e] hover:text-[#0f766e] cursor-pointer transition"
+                disabled={actionLoading}
+                className="w-full mt-3 py-3 rounded-xl border border-[#d9e7df] text-[#062f2f] font-bold hover:border-[#0f766e] hover:text-[#0f766e] disabled:opacity-50 cursor-pointer transition"
               >
 
                 <FontAwesomeIcon
@@ -1254,9 +1661,245 @@ function Discover() {
                   className="mr-2"
                 />
 
-                Open Messages
+                {actionLoading
+                  ? "Opening Messages..."
+                  : "Open Messages"}
 
               </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+      {/* ========================================================
+          EXCHANGE REQUEST MODAL
+      ======================================================== */}
+
+      {requestUser && (
+
+        <div
+          className="fixed inset-0 z-[120] bg-[#062f2f]/60 backdrop-blur-sm flex items-center justify-center p-5"
+          onClick={(e) => {
+            if (
+              e.target === e.currentTarget &&
+              !requestLoading
+            ) {
+              closeRequestModal();
+            }
+          }}
+        >
+
+          <div className="w-full max-w-lg bg-white rounded-[26px] shadow-2xl overflow-hidden">
+
+            {/* REQUEST HEADER */}
+
+            <div className="p-6 bg-[#062f2f] text-white">
+
+              <div className="flex items-start justify-between">
+
+                <div className="flex items-center gap-4 min-w-0">
+
+                  {requestUser.avatarUrl ? (
+                    <img
+                      src={requestUser.avatarUrl}
+                      alt={requestUser.name}
+                      className="w-14 h-14 rounded-2xl object-cover border border-white/20 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-[#f59e0b] flex items-center justify-center font-extrabold text-lg flex-shrink-0">
+                      {requestUser.initials}
+                    </div>
+                  )}
+
+                  <div className="min-w-0">
+
+                    <p className="text-xs uppercase tracking-wider text-white/50 font-bold">
+                      Skill Exchange
+                    </p>
+
+                    <h2 className="text-xl font-extrabold truncate mt-1">
+                      Request from {requestUser.name}
+                    </h2>
+
+                  </div>
+
+                </div>
+
+                <button
+                  onClick={closeRequestModal}
+                  disabled={requestLoading}
+                  className="w-9 h-9 rounded-lg hover:bg-white/10 cursor-pointer flex-shrink-0 disabled:opacity-50"
+                  aria-label="Close request modal"
+                >
+
+                  <FontAwesomeIcon icon={faXmark} />
+
+                </button>
+
+              </div>
+
+            </div>
+
+            {/* REQUEST BODY */}
+
+            <div className="p-6">
+
+              <p className="text-sm text-gray-500 leading-relaxed">
+                Send a request to{" "}
+                <span className="font-bold text-[#062f2f]">
+                  {requestUser.name}
+                </span>{" "}
+                to start a skill exchange.
+              </p>
+
+              {/* SELECT SKILL */}
+
+              {requestUser.teaches?.length > 0 && (
+
+                <div className="mt-6">
+
+                  <label className="block text-xs uppercase tracking-wider font-bold text-gray-400 mb-2">
+                    Skill you want to learn
+                  </label>
+
+                  <select
+                    value={selectedSkillId}
+                    onChange={(e) =>
+                      setSelectedSkillId(
+                        e.target.value
+                      )
+                    }
+                    disabled={requestLoading}
+                    className="w-full px-4 py-3 rounded-xl border border-[#d9e7df] bg-white text-[#062f2f] outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10 transition cursor-pointer"
+                  >
+
+                    {requestUser.teaches.map(
+                      (skill) => (
+
+                        <option
+                          key={skill.id}
+                          value={skill.id}
+                        >
+                          {skill.name}
+                        </option>
+
+                      )
+                    )}
+
+                  </select>
+
+                </div>
+
+              )}
+
+              {/* MESSAGE */}
+
+              <div className="mt-5">
+
+                <div className="flex items-center justify-between mb-2">
+
+                  <label className="text-xs uppercase tracking-wider font-bold text-gray-400">
+                    Message
+                  </label>
+
+                  <span className="text-[11px] text-gray-400">
+                    {requestMessage.length}/500
+                  </span>
+
+                </div>
+
+                <textarea
+                  value={requestMessage}
+                  onChange={(e) =>
+                    setRequestMessage(
+                      e.target.value.slice(
+                        0,
+                        500
+                      )
+                    )
+                  }
+                  disabled={requestLoading}
+                  rows={5}
+                  placeholder={`Hi ${requestUser.name.split(" ")[0] || "there"}, I'd like to exchange skills with you...`}
+                  className="w-full px-4 py-3 rounded-xl border border-[#d9e7df] outline-none resize-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10 transition"
+                />
+
+              </div>
+
+              {/* ERROR */}
+
+              {requestError && (
+
+                <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+
+                  <p className="font-semibold">
+                    {requestError}
+                  </p>
+
+                </div>
+
+              )}
+
+              {/* SUCCESS */}
+
+              {requestSuccess && (
+
+                <div className="mt-4 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
+
+                  <FontAwesomeIcon icon={faCheck} />
+
+                  <p className="font-semibold">
+                    {requestSuccess}
+                  </p>
+
+                </div>
+
+              )}
+
+              {/* BUTTONS */}
+
+              <div className="flex gap-3 mt-6">
+
+                <button
+                  onClick={closeRequestModal}
+                  disabled={requestLoading}
+                  className="flex-1 py-3 rounded-xl border border-[#d9e7df] text-[#062f2f] font-bold hover:border-[#0f766e] hover:text-[#0f766e] disabled:opacity-50 cursor-pointer transition"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleSendExchangeRequest}
+                  disabled={
+                    requestLoading ||
+                    Boolean(requestSuccess)
+                  }
+                  className="flex-[1.4] py-3 rounded-xl bg-[#f59e0b] text-white font-bold hover:bg-[#d97706] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition flex items-center justify-center gap-2"
+                >
+
+                  {requestLoading ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon
+                        icon={faPaperPlane}
+                      />
+
+                      Send Request
+                    </>
+                  )}
+
+                </button>
+
+              </div>
 
             </div>
 

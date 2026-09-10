@@ -1,8 +1,9 @@
 import heroImage from "../assets/images/imgg.jpg";
+import { Link } from "react-router-dom";
 
 function Hero() {
   return (
-    <section className="relative min-h-[560px] overflow-hidden">
+    <section className="relative min-h-[520px] sm:min-h-[560px] overflow-hidden">
 
       {/* Background Image */}
       <img
@@ -15,19 +16,19 @@ function Hero() {
       <div className="absolute inset-0 bg-[#062f2f]/65"></div>
 
       {/* Hero Content */}
-      <div className="relative z-10 min-h-[560px] flex items-center">
+      <div className="relative z-10 min-h-[520px] sm:min-h-[560px] flex items-center">
 
-        <div className="max-w-7xl mx-auto px-6 py-16 w-full">
+        <div className="max-w-7xl mx-auto px-5 sm:px-6 py-12 sm:py-16 w-full">
 
           <div className="max-w-3xl">
 
             {/* Label */}
-            <div className="inline-block px-4 py-2 bg-[#0f766e]/90 text-white rounded-full text-sm font-medium mb-6">
+            <div className="inline-block px-3.5 py-2 bg-[#0f766e]/90 text-white rounded-full text-sm font-medium mb-5 sm:mb-6">
               Learn • Teach • Connect
             </div>
 
             {/* Main Heading */}
-            <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold text-white leading-tight">
+            <h1 className="text-[2.65rem] leading-[1.08] sm:text-6xl md:text-7xl font-bold text-white">
               Exchange skills.
               <br />
 
@@ -37,21 +38,28 @@ function Hero() {
             </h1>
 
             {/* Description */}
-            <p className="mt-6 text-lg md:text-xl text-gray-200 max-w-2xl leading-relaxed">
+            <p className="mt-5 sm:mt-6 text-base sm:text-lg md:text-xl text-gray-200 max-w-2xl leading-relaxed">
               Share the skills you know, discover what you want to learn,
               and connect with people who can help you grow.
             </p>
 
             {/* Buttons */}
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
+            <div className="mt-7 sm:mt-8 flex flex-col sm:flex-row gap-3 sm:gap-4">
 
-              <button className="px-7 py-3.5 bg-[#0f766e] text-white rounded-lg font-semibold hover:bg-[#0b5d58] transition duration-300">
+              <Link
+                to="/login"
+                state={{ from: "/discover" }}
+                className="w-full sm:w-auto px-7 py-3.5 bg-[#0f766e] text-white rounded-lg font-semibold hover:bg-[#0b5d58] transition duration-300 text-center"
+              >
                 Find Your Skill Match
-              </button>
+              </Link>
 
-              <button className="px-7 py-3.5 bg-amber-500/90 backdrop-blur-sm border border-amber-300/60 text-white rounded-lg font-semibold hover:bg-amber-600 transition duration-300">
+              <a
+                href="#discover"
+                className="w-full sm:w-auto px-7 py-3.5 bg-amber-500/90 backdrop-blur-sm border border-amber-300/60 text-white rounded-lg font-semibold hover:bg-amber-600 transition duration-300 text-center"
+              >
                 Explore Skills
-              </button>
+              </a>
 
             </div>
 
