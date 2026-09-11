@@ -12,7 +12,7 @@ import {
   faSpinner,
 } from "@fortawesome/free-solid-svg-icons";
 
-import { supabase } from "../lib/supabase";
+import { supabase, logAppError, getFriendlyErrorMessage } from "../lib/supabase";
 import { redirectAfterAuth } from "../lib/authHelpers";
 
 // Google icon
@@ -108,13 +108,14 @@ function Login() {
       await redirectAfterAuth(navigate, location.state?.from || "/dashboard");
 
     } catch (error) {
-      console.error("Login error:", error);
+      logAppError("Login", error);
 
       setError(
-        error.message ||
+        getFriendlyErrorMessage(
+          error,
           "Invalid email or password. Please try again."
+        )
       );
-
     } finally {
       setLoading(false);
     }
@@ -150,11 +151,13 @@ function Login() {
       // the page is about to change.
 
     } catch (error) {
-      console.error("Google login error:", error);
+      logAppError("Google login", error);
 
       setError(
-        error.message ||
-          "Google authentication failed."
+        getFriendlyErrorMessage(
+          error,
+          "Google authentication failed. Please try again."
+        )
       );
 
       setGoogleLoading(false);
@@ -181,7 +184,13 @@ function Login() {
       if (resetError) throw resetError;
       setResetSent(true);
     } catch (resetError) {
-      setError(resetError.message || "Unable to send the password reset email.");
+      logAppError("Password reset", resetError);
+      setError(
+        getFriendlyErrorMessage(
+          resetError,
+          "Unable to send the password reset email. Please try again."
+        )
+      );
     } finally {
       setLoading(false);
     }

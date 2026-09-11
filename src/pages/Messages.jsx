@@ -369,27 +369,19 @@ function Messages() {
 
     if (!conversationExists) return;
 
-    const selectLinkedConversation = window.setTimeout(() => {
-      setSelectedId(conversationId);
-      setMobileChat(true);
+    setSelectedId(conversationId);
+    setMobileChat(true);
 
-      navigate("/messages", {
-        replace: true,
-        state: {},
-      });
-    }, 0);
-
-    return () => window.clearTimeout(selectLinkedConversation);
+    navigate("/messages", {
+      replace: true,
+      state: {},
+    });
   }, [location.state, conversations, navigate]);
 
   useEffect(() => {
     if (!currentUser || !selectedId) return;
 
-    const loadSelectedMessages = window.setTimeout(() => {
-      loadMessages(selectedId);
-    }, 0);
-
-    return () => window.clearTimeout(loadSelectedMessages);
+    loadMessages(selectedId);
   }, [selectedId, currentUser?.id]);
 
   useEffect(() => {
@@ -1022,30 +1014,6 @@ function Messages() {
                       <FontAwesomeIcon icon={faHandshake} />
 
                       {selectedConversation.skill}
-
-                    </div>
-
-                  </div>
-
-                  {/* Skill Exchange Banner */}
-
-                  <div className="mx-4 sm:mx-6 mt-5 shrink-0 p-4 rounded-2xl bg-[#062f2f] flex items-center gap-3">
-
-                    <div className="w-10 h-10 rounded-xl bg-white/10 text-[#fbbf24] flex items-center justify-center shrink-0">
-
-                      <FontAwesomeIcon icon={faHandshake} />
-
-                    </div>
-
-                    <div>
-
-                      <p className="text-sm font-bold text-white">
-                        Skill Exchange
-                      </p>
-
-                      <p className="text-xs text-white/55 mt-0.5">
-                        Discuss what you can teach and what you want to learn.
-                      </p>
 
                     </div>
 

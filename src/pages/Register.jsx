@@ -13,7 +13,7 @@ import {
   faSpinner,
 } from "@fortawesome/free-solid-svg-icons";
 
-import { supabase } from "../lib/supabase";
+import { supabase, logAppError, getFriendlyErrorMessage } from "../lib/supabase";
 
 // Google logo
 function GoogleIcon() {
@@ -148,9 +148,12 @@ function Register() {
         });
       }
     } catch (error) {
+      logAppError("Register", error);
       setError(
-        error.message ||
+        getFriendlyErrorMessage(
+          error,
           "Unable to create your account. Please try again."
+        )
       );
     } finally {
       setLoading(false);
@@ -181,9 +184,12 @@ function Register() {
         throw error;
       }
     } catch (error) {
+      logAppError("Google register", error);
       setError(
-        error.message ||
-          "Google authentication failed."
+        getFriendlyErrorMessage(
+          error,
+          "Google authentication failed. Please try again."
+        )
       );
 
       setGoogleLoading(false);

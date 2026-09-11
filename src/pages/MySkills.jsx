@@ -18,7 +18,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, logAppError, getFriendlyErrorMessage } from "../lib/supabase";
 import { usePendingExchangeRequests } from "../lib/usePendingExchangeRequests";
 import NotificationBell from "../components/NotificationBell";
 
@@ -54,13 +54,15 @@ function MySkills() {
 
   const [teachInput, setTeachInput] = useState("");
   const [learnInput, setLearnInput] = useState("");
-  const [editingSkillId, setEditingSkillId] = useState(null);
-  const [editingSkillName, setEditingSkillName] = useState("");
+  const [editSkillModal, setEditSkillModal] = useState(null);
+  const [deleteSkillModal, setDeleteSkillModal] = useState(null);
 
   // ================= STATUS =================
 
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
 
   // ================= LOAD PROFILE =================
@@ -143,13 +145,13 @@ function MySkills() {
       setTeachSkills(teaching);
       setLearnSkills(learning);
     } catch (err) {
-      console.error(
-        "Error loading skills:",
-        err
-      );
+      logAppError("Load skills", err);
 
       setError(
-        "Failed to load your skills. Please try again."
+        getFriendlyErrorMessage(
+          err,
+          "Failed to load your skills. Please try again."
+        )
       );
     } finally {
       setLoading(false);
@@ -159,12 +161,19 @@ function MySkills() {
   // ================= LOAD DATA =================
 
   useEffect(() => {
-    const loadData = window.setTimeout(() => {
-      fetchSkills();
-      fetchProfile();
-    }, 0);
+    let isMounted = true;
 
-    return () => window.clearTimeout(loadData);
+    const loadData = async () => {
+      if (!isMounted) return;
+
+      await Promise.allSettled([fetchSkills(), fetchProfile()]);
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // ================= ADD TEACHING SKILL =================
@@ -232,13 +241,13 @@ function MySkills() {
       setTeachInput("");
       setShowTeachForm(false);
     } catch (err) {
-      console.error(
-        "Error adding teaching skill:",
-        err
-      );
+      logAppError("Add teaching skill", err);
 
       setError(
-        "Failed to add teaching skill. Please try again."
+        getFriendlyErrorMessage(
+          err,
+          "Failed to add teaching skill. Please try again."
+        )
       );
     } finally {
       setAdding(false);
@@ -310,13 +319,13 @@ function MySkills() {
       setLearnInput("");
       setShowLearnForm(false);
     } catch (err) {
-      console.error(
-        "Error adding learning skill:",
-        err
-      );
+      logAppError("Add learning skill", err);
 
       setError(
-        "Failed to add learning skill. Please try again."
+        getFriendlyErrorMessage(
+          err,
+          "Failed to add learning skill. Please try again."
+        )
       );
     } finally {
       setAdding(false);
@@ -325,92 +334,86 @@ function MySkills() {
 
   // ================= REMOVE TEACHING SKILL =================
 
-  const removeTeachSkill = async (skillId) => {
-    if (!window.confirm("Remove this teaching skill?")) return;
+  const openDeleteModal = (skill, skillType) => {
+    setDeleteSkillModal({ skill, skillType });
+    setError("");
+  };
 
+  const closeDeleteModal = () => {
+    setDeleteSkillModal(null);
+  };
+
+  const deleteSkill = async () => {
+    if (!deleteSkillModal) return;
+
+    const { skill, skillType } = deleteSkillModal;
+    setDeleting(true);
     setError("");
 
     try {
-      const { error: deleteError } =
-        await supabase
-          .from("skills")
-          .delete()
-          .eq("id", skillId);
+      const { error: deleteError } = await supabase
+        .from("skills")
+        .delete()
+        .eq("id", skill.id);
 
       if (deleteError) {
         throw deleteError;
       }
 
-      setTeachSkills((current) =>
-        current.filter(
-          (skill) => skill.id !== skillId
-        )
-      );
-    } catch (err) {
-      console.error(
-        "Error removing teaching skill:",
-        err
-      );
-
-      setError(
-        "Failed to remove skill. Please try again."
-      );
-    }
-  };
-
-  // ================= REMOVE LEARNING SKILL =================
-
-  const removeLearnSkill = async (skillId) => {
-    if (!window.confirm("Remove this learning goal?")) return;
-
-    setError("");
-
-    try {
-      const { error: deleteError } =
-        await supabase
-          .from("skills")
-          .delete()
-          .eq("id", skillId);
-
-      if (deleteError) {
-        throw deleteError;
+      if (skillType === "teach") {
+        setTeachSkills((current) =>
+          current.filter((item) => item.id !== skill.id)
+        );
+      } else {
+        setLearnSkills((current) =>
+          current.filter((item) => item.id !== skill.id)
+        );
       }
 
-      setLearnSkills((current) =>
-        current.filter(
-          (skill) => skill.id !== skillId
+      setDeleteSkillModal(null);
+    } catch (err) {
+      logAppError("Delete skill", err);
+      setError(
+        getFriendlyErrorMessage(
+          err,
+          "This skill could not be deleted. Please try again."
         )
       );
-    } catch (err) {
-      console.error(
-        "Error removing learning skill:",
-        err
-      );
-
-      setError(
-        "Failed to remove skill. Please try again."
-      );
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const startEditingSkill = (skill) => {
-    setEditingSkillId(skill.id);
-    setEditingSkillName(skill.skill_name);
+  const openEditModal = (skill, skillType) => {
+    setEditSkillModal({
+      id: skill.id,
+      skillType,
+      skillName: skill.skill_name,
+      originalName: skill.skill_name,
+    });
     setError("");
   };
 
-  const saveSkillName = async (skillId, skillType) => {
-    const nextName = editingSkillName.trim();
+  const closeEditModal = () => {
+    setEditSkillModal(null);
+  };
+
+  const saveSkillName = async () => {
+    if (!editSkillModal || saving) return;
+
+    const nextName = editSkillModal.skillName.trim();
 
     if (!nextName) {
       setError("Skill name cannot be empty.");
       return;
     }
 
-    const skills = skillType === "teach" ? teachSkills : learnSkills;
+    const skills =
+      editSkillModal.skillType === "teach" ? teachSkills : learnSkills;
+
     const duplicate = skills.some(
       (skill) =>
-        skill.id !== skillId &&
+        skill.id !== editSkillModal.id &&
         skill.skill_name.toLowerCase() === nextName.toLowerCase()
     );
 
@@ -419,30 +422,45 @@ function MySkills() {
       return;
     }
 
-    const { data, error: updateError } = await supabase
-      .from("skills")
-      .update({ skill_name: nextName })
-      .eq("id", skillId)
-      .select()
-      .single();
+    setSaving(true);
+    setError("");
 
-    if (updateError) {
-      console.error("Error updating skill:", updateError);
-      setError("Failed to update skill. Please try again.");
-      return;
+    try {
+      const { error: updateError } = await supabase
+        .from("skills")
+        .update({ skill_name: nextName })
+        .eq("id", editSkillModal.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      const updatedSkill = {
+        ...skills.find((skill) => skill.id === editSkillModal.id),
+        skill_name: nextName,
+      };
+
+      const updateSkills = (current) =>
+        current.map((skill) => (skill.id === editSkillModal.id ? updatedSkill : skill));
+
+      if (editSkillModal.skillType === "teach") {
+        setTeachSkills(updateSkills);
+      } else {
+        setLearnSkills(updateSkills);
+      }
+
+      setEditSkillModal(null);
+    } catch (err) {
+      logAppError("Update skill", err);
+      setError(
+        getFriendlyErrorMessage(
+          err,
+          "This skill could not be updated. Please try again."
+        )
+      );
+    } finally {
+      setSaving(false);
     }
-
-    const updateSkills = (current) =>
-      current.map((skill) => (skill.id === skillId ? data : skill));
-
-    if (skillType === "teach") {
-      setTeachSkills(updateSkills);
-    } else {
-      setLearnSkills(updateSkills);
-    }
-
-    setEditingSkillId(null);
-    setEditingSkillName("");
   };
 
   // ================= LOGOUT =================
@@ -850,50 +868,27 @@ function MySkills() {
 
                         <div
                           key={skill.id}
-                          className="skill-row flex items-center gap-3 px-2 py-3 border-b border-[#edf2ee] text-sm font-semibold"
+                          className="skill-row flex items-center justify-between gap-3 px-2 py-3 border-b border-[#edf2ee] text-sm font-semibold"
                         >
+                          <span className="flex-1 truncate">{skill.skill_name}</span>
 
-                          {editingSkillId === skill.id ? (
-                            <input
-                              value={editingSkillName}
-                              onChange={(event) => setEditingSkillName(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") saveSkillName(skill.id, "teach");
-                                if (event.key === "Escape") setEditingSkillId(null);
-                              }}
-                              className="w-32 bg-transparent border-b border-[#b45309] outline-none"
-                              autoFocus
-                            />
-                          ) : (
-                            <span>{skill.skill_name}</span>
-                          )}
-
-                          {editingSkillId === skill.id ? (
+                          <div className="flex items-center gap-2">
                             <button
-                              onClick={() => saveSkillName(skill.id, "teach")}
-                              className="text-[#0f766e] cursor-pointer"
-                              aria-label={`Save ${skill.skill_name}`}
-                            >
-                              <FontAwesomeIcon icon={faPen} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => startEditingSkill(skill)}
-                              className="text-[#b45309]/60 hover:text-[#b45309] cursor-pointer"
+                              onClick={() => openEditModal(skill, "teach")}
+                              className="rounded-lg border border-[#fde68a] bg-[#fff7df] px-2.5 py-1.5 text-[#92400e] hover:bg-[#feefc7] cursor-pointer"
                               aria-label={`Edit ${skill.skill_name}`}
                             >
-                              <FontAwesomeIcon icon={faPen} />
+                              Edit
                             </button>
-                          )}
 
-                          <button
-                            onClick={() => removeTeachSkill(skill.id)}
-                            className="hover:text-red-600 cursor-pointer"
-                            aria-label={`Remove ${skill.skill_name}`}
-                          >
-                            <FontAwesomeIcon icon={faXmark} />
-                          </button>
-
+                            <button
+                              onClick={() => openDeleteModal(skill, "teach")}
+                              className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-red-600 hover:bg-red-100 cursor-pointer"
+                              aria-label={`Remove ${skill.skill_name}`}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
 
                       ))}
@@ -1030,50 +1025,27 @@ function MySkills() {
 
                         <div
                           key={skill.id}
-                          className="skill-row flex items-center gap-3 px-2 py-3 border-b border-[#edf2ee] text-sm font-semibold"
+                          className="skill-row flex items-center justify-between gap-3 px-2 py-3 border-b border-[#edf2ee] text-sm font-semibold"
                         >
+                          <span className="flex-1 truncate">{skill.skill_name}</span>
 
-                          {editingSkillId === skill.id ? (
-                            <input
-                              value={editingSkillName}
-                              onChange={(event) => setEditingSkillName(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") saveSkillName(skill.id, "learn");
-                                if (event.key === "Escape") setEditingSkillId(null);
-                              }}
-                              className="w-32 bg-transparent border-b border-[#0f766e] outline-none"
-                              autoFocus
-                            />
-                          ) : (
-                            <span>{skill.skill_name}</span>
-                          )}
-
-                          {editingSkillId === skill.id ? (
+                          <div className="flex items-center gap-2">
                             <button
-                              onClick={() => saveSkillName(skill.id, "learn")}
-                              className="text-[#0f766e] cursor-pointer"
-                              aria-label={`Save ${skill.skill_name}`}
-                            >
-                              <FontAwesomeIcon icon={faPen} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => startEditingSkill(skill)}
-                              className="text-[#0f766e]/60 hover:text-[#0f766e] cursor-pointer"
+                              onClick={() => openEditModal(skill, "learn")}
+                              className="rounded-lg border border-[#99f6e4] bg-[#f0fdfa] px-2.5 py-1.5 text-[#0f766e] hover:bg-[#d8f7ef] cursor-pointer"
                               aria-label={`Edit ${skill.skill_name}`}
                             >
-                              <FontAwesomeIcon icon={faPen} />
+                              Edit
                             </button>
-                          )}
 
-                          <button
-                            onClick={() => removeLearnSkill(skill.id)}
-                            className="hover:text-red-600 cursor-pointer"
-                            aria-label={`Remove ${skill.skill_name}`}
-                          >
-                            <FontAwesomeIcon icon={faXmark} />
-                          </button>
-
+                            <button
+                              onClick={() => openDeleteModal(skill, "learn")}
+                              className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-red-600 hover:bg-red-100 cursor-pointer"
+                              aria-label={`Remove ${skill.skill_name}`}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
 
                       ))}
@@ -1285,6 +1257,146 @@ function MySkills() {
                   <span className="block text-sm font-bold text-[#0f766e]">I want to learn</span>
                   <span className="mt-0.5 block text-xs text-[#52716b]">Set a learning goal</span>
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editSkillModal && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-[#062f2f]/45 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-skill-title"
+          onClick={closeEditModal}
+        >
+          <div
+            className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-[0_28px_70px_rgba(6,47,47,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#0f766e]">
+                  Update skill
+                </p>
+                <h2 id="edit-skill-title" className="mt-2 text-2xl font-extrabold text-[#062f2f]">
+                  Edit skill name
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Close edit skill dialog"
+              >
+                <FontAwesomeIcon icon={faXmark} />
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <label className="mb-2 block text-xs font-bold uppercase tracking-[0.14em] text-gray-500">
+                Skill name
+              </label>
+
+              <input
+                type="text"
+                value={editSkillModal.skillName}
+                onChange={(event) =>
+                  setEditSkillModal((current) =>
+                    current
+                      ? { ...current, skillName: event.target.value }
+                      : current
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    saveSkillName();
+                  }
+                  if (event.key === "Escape") {
+                    closeEditModal();
+                  }
+                }}
+                className="w-full rounded-xl border border-[#d9e7df] bg-[#fbfdfb] px-4 py-3 text-sm outline-none focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/10"
+                autoFocus
+              />
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeEditModal}
+                className="flex-1 rounded-xl border border-[#d9e7df] bg-white px-4 py-3 text-sm font-bold text-[#062f2f] hover:border-[#b5c9c3] hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={saveSkillName}
+                disabled={saving || !editSkillModal.skillName.trim()}
+                className="flex-1 rounded-xl bg-[#0f766e] px-4 py-3 text-sm font-bold text-white hover:bg-[#0c5a58] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Done"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteSkillModal && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-[#062f2f]/45 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-skill-title"
+          onClick={closeDeleteModal}
+        >
+          <div
+            className="w-full max-w-md rounded-[28px] bg-white p-6 shadow-[0_28px_70px_rgba(6,47,47,0.18)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-red-500">
+                  Delete skill
+                </p>
+                <h2 id="delete-skill-title" className="mt-2 text-2xl font-extrabold text-[#062f2f]">
+                  Remove this skill?
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Close delete skill dialog"
+              >
+                <FontAwesomeIcon icon={faXmark} />
+              </button>
+            </div>
+
+            <p className="mt-5 text-sm leading-relaxed text-gray-600">
+              This action will permanently remove <span className="font-bold text-[#062f2f]">{deleteSkillModal.skill.skill_name}</span> from your profile.
+            </p>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                className="flex-1 rounded-xl border border-[#d9e7df] bg-white px-4 py-3 text-sm font-bold text-[#062f2f] hover:border-[#b5c9c3] hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={deleteSkill}
+                disabled={deleting}
+                className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>

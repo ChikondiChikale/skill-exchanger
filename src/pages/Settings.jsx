@@ -27,7 +27,7 @@ import {
   faChevronDown,
 } from "@fortawesome/free-solid-svg-icons";
 
-import { supabase } from "../lib/supabase";
+import { supabase, logAppError, getFriendlyErrorMessage } from "../lib/supabase";
 import { usePendingExchangeRequests } from "../lib/usePendingExchangeRequests";
 import NotificationBell from "../components/NotificationBell";
 
@@ -147,14 +147,13 @@ function Settings() {
         setOccupation(profileData.occupation || "");
         setBio(profileData.bio || "");
       } catch (error) {
-        console.error(
-          "Settings profile loading error:",
-          error
-        );
+        logAppError("Settings profile loading", error);
 
         setError(
-          error.message ||
+          getFriendlyErrorMessage(
+            error,
             "Unable to load your profile."
+          )
         );
       } finally {
         setLoading(false);
@@ -264,14 +263,13 @@ function Settings() {
         setSaved(false);
       }, 2500);
     } catch (error) {
-      console.error(
-        "Profile save error:",
-        error
-      );
+      logAppError("Profile save", error);
 
       setError(
-        error.message ||
+        getFriendlyErrorMessage(
+          error,
           "Unable to save your profile."
+        )
       );
     } finally {
       setSaving(false);
@@ -328,7 +326,13 @@ function Settings() {
       setChangePasswordOpen(false);
       setSecurityMessage("Your password has been updated successfully.");
     } catch (updateError) {
-      setError(updateError.message || "Unable to update your password.");
+      logAppError("Password update", updateError);
+      setError(
+        getFriendlyErrorMessage(
+          updateError,
+          "Unable to update your password."
+        )
+      );
     } finally {
       setUpdatingPassword(false);
     }
@@ -453,12 +457,8 @@ function Settings() {
         setSaved(false);
       }, 2500);
     } catch (error) {
-      console.error(
-        "Profile photo upload error:",
-        error
-      );
+      logAppError("Profile photo upload", error);
 
-      // Remove uploaded image if database update failed
       if (uploadedPath) {
         await supabase.storage
           .from("avatars")
@@ -466,8 +466,10 @@ function Settings() {
       }
 
       setError(
-        error.message ||
+        getFriendlyErrorMessage(
+          error,
           "Unable to upload your profile photo."
+        )
       );
     } finally {
       setUploadingPhoto(false);

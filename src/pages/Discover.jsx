@@ -20,7 +20,7 @@ import {
   faUser,
 } from "@fortawesome/free-solid-svg-icons";
 
-import { supabase } from "../lib/supabase";
+import { supabase, logAppError, getFriendlyErrorMessage } from "../lib/supabase";
 import NotificationBell from "../components/NotificationBell";
 
 function getInitials(name = "") {
@@ -331,13 +331,15 @@ function Discover() {
         setUsers(formattedUsers);
         setPendingRequestUserIds(pendingIds);
       } catch (err) {
-        console.error("Discover loading error:", err);
+        logAppError("Discover loading", err);
 
         if (!mounted) return;
 
         setError(
-          err?.message ||
+          getFriendlyErrorMessage(
+            err,
             "Unable to load the Discover community. Please try again."
+          )
         );
       } finally {
         if (mounted) {
@@ -441,11 +443,13 @@ function Discover() {
         },
       });
     } catch (err) {
-      console.error("Conversation creation error:", err);
+      logAppError("Create conversation", err);
 
       setError(
-        err?.message ||
+        getFriendlyErrorMessage(
+          err,
           `Unable to start a conversation with ${user.name}.`
+        )
       );
     } finally {
       setActionLoading(false);
